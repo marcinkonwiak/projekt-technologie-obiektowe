@@ -6,9 +6,17 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "psycopg2-binary>=2.9.10",
+    "pydantic-settings>=2.8.1",
     "ruff>=0.11.0",
     "textual>=2.1.2",
     "textual-dev>=1.7.0",
+]
+
+
+[dependency-groups]
+dev = [
+    "basedpyright>=1.28.4",
+    "pytest>=8.3.5",
 ]
 
 [tool.ruff]
@@ -26,5 +34,13 @@ select = [
 ]
 
 extend-ignore = [
-    "B904",  # Within an except clause, raise exceptions with ...
+    "B904", # Within an except clause, raise exceptions with ...
 ]
+
+[tool.basedpyright]
+include = ["src"]
+reportExplicitAny = false
+reportUnusedCallResult = false
+reportImplicitOverride = false
+reportUnannotatedClassAttribute = false
+reportAny = false

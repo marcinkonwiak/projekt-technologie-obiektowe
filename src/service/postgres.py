@@ -37,7 +37,6 @@ class PostgresService:
             print(f"Error disconnecting from the database: {e}")
             return False
 
-
     def list_tables(self) -> list[str]:
         self._connection_sanity_check()
         assert self.cursor is not None
