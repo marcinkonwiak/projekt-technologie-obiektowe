@@ -3,15 +3,19 @@ from textual.app import App, ComposeResult
 from textual.driver import Driver
 from textual.widgets import Footer, Static
 
+from src.components.add_connection_modal import AddConnectionModalScreen
 from src.components.database_tree import DatabaseTree
 from src.settings import AppConfig
 
 
 class DatabaseApp(App[None]):
-    CSS_PATH = "app.tcss"
-    BINDINGS = [("d", "toggle_dark", "Toggle dark mode")]
     config: AppConfig
+    CSS_PATH = "css/app.tcss"
     theme = "tokyo-night"
+    BINDINGS = [
+        ("d", "toggle_dark", "Toggle dark mode"),
+        ("a", "add_db_connection", "Add database connection"),
+    ]
 
     def __init__(
         self,
@@ -23,6 +27,9 @@ class DatabaseApp(App[None]):
     ):
         super().__init__(driver_class, css_path, watch_css, ansi_color)
         self.config = config
+
+    def action_add_db_connection(self) -> None:
+        self.push_screen(AddConnectionModalScreen())
 
     def compose(self) -> ComposeResult:
         yield DatabaseTree(self.config.db_connections, id="db-tree")
