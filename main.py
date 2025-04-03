@@ -2,7 +2,7 @@ from src.app import DatabaseApp
 from src.settings import AppConfig
 
 if __name__ == "__main__":
-    settings = AppConfig.load()
+    config = AppConfig.load()
 
-    app = DatabaseApp()
+    app = DatabaseApp(config=config)
     app.run()

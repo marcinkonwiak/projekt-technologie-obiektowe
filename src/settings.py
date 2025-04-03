@@ -1,23 +1,23 @@
 import json
 import os
 from pathlib import Path
-from typing import Any
 
 from pydantic_settings import BaseSettings
 
 
 class DBConnection(BaseSettings):
-    host: str
-    port: int
-    user: str
-    password: str
-    database: str
+    name: str
+    host: str | None
+    port: int | None
+    user: str | None
+    password: str | None
+    database: str | None
 
 
 class AppConfig(BaseSettings):
     config_path: Path = Path.home() / ".config" / "db_explorer" / "config.json"
 
-    db_connections: dict[str, DBConnection] = {}
+    db_connections: list[DBConnection] = []
 
     @classmethod
     def load(cls, config_path: Path | None = None) -> "AppConfig":
@@ -43,10 +43,8 @@ class AppConfig(BaseSettings):
 
     def save(self) -> None:
         """Save configuration to file"""
-        # Ensure directory exists
         self.config_path.parent.mkdir(exist_ok=True, parents=True)
 
-        # Convert to dict, excluding non-necessary fields
         config_dict = self.model_dump(exclude={"config_path"})
 
         with open(self.config_path, "w") as f:
@@ -54,17 +52,20 @@ class AppConfig(BaseSettings):
 
         os.chmod(self.config_path, 0o600)  # Read/write for owner only
 
-    def add_db_connection(self, name: str, connection_details: dict[str, Any]) -> None:
-        connection = DBConnection(**connection_details)
-        self.db_connections[name] = connection
+    def add_db_connection(self, connection: DBConnection) -> None:
+        self.db_connections.append(connection)
         self.save()
 
-    def remove_db_connection(self, name: str) -> bool:
-        if name in self.db_connections:
-            del self.db_connections[name]
+    def remove_db_connection(self, index: int) -> bool:
+        if 0 <= index < len(self.db_connections):
+            del self.db_connections[index]
             self.save()
             return True
         return False
 
-    def get_db_connection(self, name: str) -> DBConnection | None:
-        return self.db_connections.get(name)
+    def get_db_connection(self, index: int) -> DBConnection | None:
+        return (
+            self.db_connections[index]
+            if 0 <= index < len(self.db_connections)
+            else None
+        )
