@@ -1,11 +1,13 @@
 import json
 import os
+import uuid
 from pathlib import Path
 
 from pydantic_settings import BaseSettings
 
 
 class DBConnection(BaseSettings):
+    id: str = ""
     name: str
     host: str | None
     port: int | None
@@ -53,14 +55,17 @@ class AppConfig(BaseSettings):
         os.chmod(self.config_path, 0o600)  # Read/write for owner only
 
     def add_db_connection(self, connection: DBConnection) -> None:
+        if not connection.id:
+            connection.id = str(uuid.uuid4())
         self.db_connections.append(connection)
         self.save()
 
-    def remove_db_connection(self, index: int) -> bool:
-        if 0 <= index < len(self.db_connections):
-            del self.db_connections[index]
-            self.save()
-            return True
+    def remove_db_connection(self, connection_id: str) -> bool:
+        for i, connection in enumerate(self.db_connections):
+            if connection.id == connection_id:
+                del self.db_connections[i]
+                self.save()
+                return True
         return False
 
     def get_db_connection(self, index: int) -> DBConnection | None:

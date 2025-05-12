@@ -16,8 +16,9 @@ class DatabaseApp(App[None]):
     CSS_PATH = "css/app.tcss"
     theme = "tokyo-night"  # pyright: ignore [reportAssignmentType]
     BINDINGS = [
-        ("d", "toggle_dark", "Toggle dark mode"),
+        ("t", "toggle_dark", "Toggle dark mode"),
         ("a", "add_db_connection", "Add database connection"),
+        ("d", "remove_db_connection", "Remove selected database connection"),
     ]
 
     def __init__(
@@ -64,3 +65,31 @@ class DatabaseApp(App[None]):
         self.theme = (
             "textual-dark" if self.theme == "textual-light" else "textual-light"
         )
+
+    def action_remove_db_connection(self) -> None:
+        db_tree = self.query_one(DatabaseTree)
+        selected_id = db_tree.get_selected_db_id()
+
+        if selected_id is None:
+            self.notify(
+                "No database connection selected",
+                title="Error",
+                severity="error",
+                timeout=3,
+            )
+            return
+
+        connection = None
+        for conn in self.config.db_connections:
+            if conn.id == selected_id:
+                connection = conn
+                break
+
+        if connection and self.config.remove_db_connection(selected_id):
+            self.notify(
+                f"Database connection '{connection.name}' removed",
+                title="Success",
+                timeout=3,
+            )
+
+            db_tree.databases = self.config.db_connections

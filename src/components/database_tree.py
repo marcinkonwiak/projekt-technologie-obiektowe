@@ -1,4 +1,3 @@
-from textual import log
 from textual.app import ComposeResult
 from textual.reactive import Reactive, reactive
 from textual.widget import Widget
@@ -25,8 +24,19 @@ class DatabaseTree(Widget):
 
         if self.databases:
             for db in self.databases:
-                log("Adding database to tree:", db)
                 root.add(label=db.name, data=db)
+
+    def get_selected_db_id(self) -> str | None:
+        tree: Tree[DBConnection] = self.query_one(Tree)  # pyright: ignore [reportUnknownVariableType]
+        cursor_node = tree.cursor_node
+
+        if cursor_node is None or cursor_node == tree.root:
+            return None
+
+        if cursor_node.data:
+            return cursor_node.data.id
+
+        return None
 
     def on_mount(self) -> None:
         self._clear_and_populate_tree()
@@ -34,8 +44,5 @@ class DatabaseTree(Widget):
     def watch_databases(
         self, old_databases: list[DBConnection], new_databases: list[DBConnection]
     ) -> None:
-        log("🥝🥝🥝🥝🥝🥝🥝🥝🥝v")
-        log(new_databases)
         if self.is_mounted:
-            log("🥝🥝🥝🥝🥝🥝🥝🥝🥝v")
             self._clear_and_populate_tree()
