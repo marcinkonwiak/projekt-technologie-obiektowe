@@ -3,15 +3,18 @@ from textual.app import App, ComposeResult
 from textual.driver import Driver
 from textual.widgets import Footer, Static
 
-from src.components.add_connection_modal import AddConnectionModalScreen
+from src.components.add_connection_modal import (
+    AddConnectionModalScreen,
+    AddConnectionModalScreenResult,
+)
 from src.components.database_tree import DatabaseTree
-from src.settings import AppConfig
+from src.settings import AppConfig, DBConnection
 
 
 class DatabaseApp(App[None]):
     config: AppConfig
     CSS_PATH = "css/app.tcss"
-    theme = "tokyo-night"
+    theme = "tokyo-night"  # pyright: ignore [reportAssignmentType]
     BINDINGS = [
         ("d", "toggle_dark", "Toggle dark mode"),
         ("a", "add_db_connection", "Add database connection"),
@@ -29,11 +32,32 @@ class DatabaseApp(App[None]):
         self.config = config
 
     def action_add_db_connection(self) -> None:
-        self.push_screen(AddConnectionModalScreen())
+        def check_result(result: AddConnectionModalScreenResult | None):
+            if not result:
+                return
+
+            connection = DBConnection(
+                name=result.name,
+                host=result.host,
+                port=result.port,
+                user=result.user,
+                password=result.password,
+                database=result.database,
+            )
+            self.config.add_db_connection(connection)
+            self.notify(
+                "Database connection added successfully",
+                title="Success",
+                timeout=3,
+            )
+
+            self.query_one(DatabaseTree).databases = self.config.db_connections
+
+        self.push_screen(AddConnectionModalScreen(), check_result)
 
     def compose(self) -> ComposeResult:
         yield DatabaseTree(self.config.db_connections, id="db-tree")
-        yield Static("TEXT \n" * 10, id="body")
+        yield Static("---\n" * 10, id="body")
         yield Footer()
 
     def action_toggle_dark(self) -> None:
