@@ -1,6 +1,7 @@
 from typing import Any
 
 from textual.app import ComposeResult
+from textual.message import Message
 from textual.reactive import Reactive, reactive
 from textual.widget import Widget
 from textual.widgets import Tree
@@ -18,6 +19,16 @@ class DatabaseTree(Widget):
         self.databases = databases
         self.postgres_service = PostgresService()
 
+    class Table:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+    class TableSelected(Message):
+        def __init__(self, connection: DBConnection, table: str):
+            super().__init__()
+            self.connection = connection
+            self.table = table
+
     def compose(self) -> ComposeResult:
         yield Tree(label="Databases")
 
@@ -31,6 +42,25 @@ class DatabaseTree(Widget):
             for db in self.databases:
                 node = root.add(label=db.name, data=db, expand=False)
                 node.add_leaf("Loading tables...")
+
+    def on_tree_node_selected(self, event: Tree.NodeSelected[Any]) -> None:
+        node = event.node
+
+        if node == self.query_one(Tree[DBConnection]).root or not node.data:
+            return
+
+        if (
+            isinstance(node.data, self.Table)
+            and node.parent
+            and node.parent.data
+            and isinstance(node.parent.data, DBConnection)
+        ):
+            self.post_message(
+                self.TableSelected(
+                    connection=node.parent.data,
+                    table=node.data.name,
+                )
+            )
 
     async def on_tree_node_expanded(self, event: Tree.NodeExpanded[Any]) -> None:
         node = event.node
@@ -56,7 +86,7 @@ class DatabaseTree(Widget):
         tables = worker.result
         if tables:
             for table in tables:
-                node.add_leaf(label=table)
+                node.add_leaf(label=table, data=self.Table(table))
         else:
             node.add_leaf("No tables found")
 
