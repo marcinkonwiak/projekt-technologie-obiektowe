@@ -2,19 +2,21 @@ from typing import Any
 
 import psycopg2
 
+from src.settings import DBConnection
+
 
 class PostgresService:
     connection: psycopg2.extensions.connection | None = None
     cursor: psycopg2.extensions.cursor | None = None
 
-    def connect(self) -> bool:
+    def connect(self, db_config: DBConnection) -> bool:
         try:
             self.connection = psycopg2.connect(
-                dbname="postgres",
-                user="postgres",
-                password="password",
-                host="localhost",
-                port="5432",
+                dbname=db_config.database,
+                user=db_config.user,
+                password=db_config.password,
+                host=db_config.host,
+                port=db_config.port,
             )
             self.cursor = self.connection.cursor()
             return True

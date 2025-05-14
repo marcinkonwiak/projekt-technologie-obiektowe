@@ -1,4 +1,4 @@
-from textual._path import CSSPathType
+from textual._path import CSSPathType  # noqa
 from textual.app import App, ComposeResult
 from textual.driver import Driver
 from textual.widgets import Footer, Static
