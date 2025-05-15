@@ -14,10 +14,15 @@ class DatabaseTree(Widget):
     databases: Reactive[list[DBConnection]] = reactive(list, always_update=True)
     postgres_service: PostgresService
 
-    def __init__(self, databases: list[DBConnection], id: str | None = None) -> None:
+    def __init__(
+        self,
+        postgres_service: PostgresService,
+        databases: list[DBConnection],
+        id: str | None = None,
+    ) -> None:
         super().__init__(id=id)
         self.databases = databases
-        self.postgres_service = PostgresService()
+        self.postgres_service = postgres_service
 
     class Table:
         def __init__(self, name: str) -> None:
@@ -31,6 +36,15 @@ class DatabaseTree(Widget):
 
     def compose(self) -> ComposeResult:
         yield Tree(label="Databases")
+
+    def on_mount(self) -> None:
+        self._clear_and_populate_tree()
+
+    def watch_databases(
+        self, old_databases: list[DBConnection], new_databases: list[DBConnection]
+    ) -> None:
+        if self.is_mounted:
+            self._clear_and_populate_tree()
 
     def _clear_and_populate_tree(self) -> None:
         tree: Tree[DBConnection] = self.query_one(Tree)  # pyright: ignore [reportUnknownVariableType]
@@ -101,15 +115,6 @@ class DatabaseTree(Widget):
             return cursor_node.data.id
 
         return None
-
-    def on_mount(self) -> None:
-        self._clear_and_populate_tree()
-
-    def watch_databases(
-        self, old_databases: list[DBConnection], new_databases: list[DBConnection]
-    ) -> None:
-        if self.is_mounted:
-            self._clear_and_populate_tree()
 
     def _fetch_tables(self, connection: DBConnection) -> None | list[str] | list[Any]:
         tables = []

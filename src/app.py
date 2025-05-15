@@ -1,13 +1,15 @@
 from textual._path import CSSPathType  # noqa
 from textual.app import App, ComposeResult
 from textual.driver import Driver
-from textual.widgets import Footer, Static
+from textual.widgets import Footer
 
 from src.components.add_connection_modal import (
     AddConnectionModalScreen,
     AddConnectionModalScreenResult,
 )
+from src.components.database_table import DatabaseTable
 from src.components.database_tree import DatabaseTree
+from src.service.postgres import PostgresService
 from src.settings import AppConfig, DBConnection
 
 
@@ -31,6 +33,7 @@ class DatabaseApp(App[None]):
     ):
         super().__init__(driver_class, css_path, watch_css, ansi_color)
         self.config = config
+        self.postgres_service = PostgresService()
 
     def action_add_db_connection(self) -> None:
         def check_result(result: AddConnectionModalScreenResult | None):
@@ -57,14 +60,28 @@ class DatabaseApp(App[None]):
         self.push_screen(AddConnectionModalScreen(), check_result)
 
     def compose(self) -> ComposeResult:
-        yield DatabaseTree(self.config.db_connections, id="db-tree")
-        yield Static("---\n" * 10, id="body")
+        yield DatabaseTree(
+            postgres_service=self.postgres_service,
+            databases=self.config.db_connections,
+            id="db-tree",
+        )
+        yield DatabaseTable(
+            postgres_service=self.postgres_service,
+            id="db-table",
+        )
         yield Footer()
 
     def action_toggle_dark(self) -> None:
         self.theme = (
             "textual-dark" if self.theme == "textual-light" else "textual-light"
         )
+
+    def on_database_tree_table_selected(
+        self, event: DatabaseTree.TableSelected
+    ) -> None:
+        table = self.query_one(DatabaseTable)
+        table.db_connection = event.connection
+        table.table = event.table
 
     def action_remove_db_connection(self) -> None:
         db_tree = self.query_one(DatabaseTree)

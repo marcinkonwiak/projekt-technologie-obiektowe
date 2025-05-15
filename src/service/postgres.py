@@ -1,6 +1,7 @@
 from typing import Any
 
 import psycopg2
+from psycopg2 import sql
 
 from src.settings import DBConnection
 
@@ -56,28 +57,35 @@ class PostgresService:
             print(f"Error listing tables: {e}")
             return []
 
-    def execute_query(
-        self, query: str, params: dict[str, Any] | None = None
-    ) -> list[dict[str, Any]] | int:
+    def get_data(
+        self, table: str, columns: list[str], limit: int = 10
+    ) -> list[tuple[Any]]:
+        self._connection_sanity_check()
+        assert self.cursor is not None
+        assert self.connection is not None
+        column_names = [sql.Identifier(column) for column in columns]
+        self.cursor.execute(
+            sql.SQL("SELECT {} FROM {} LIMIT %s").format(
+                sql.SQL(", ").join(column_names),
+                sql.Identifier(table),
+            ),
+            [limit],
+        )
+
+        return self.cursor.fetchall()
+
+    def get_table_columns(self, table: str) -> list[str]:
         self._connection_sanity_check()
         assert self.cursor is not None
         assert self.connection is not None
 
-        try:
-            self.cursor.execute(query, params or {})
-
-            if query.strip().upper().startswith("SELECT"):
-                result = self.cursor.fetchall()
-                # Convert from psycopg2's DictRow to plain dictionaries
-                return [dict(row) for row in result]
-            else:
-                # For non-SELECT queries, return affected row count
-                self.connection.commit()
-                return self.cursor.rowcount
-        except Exception as e:
-            print(f"Error executing query: {e}")
-            self.connection.rollback()
-            raise
+        self.cursor.execute(
+            sql.SQL(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = %s"
+            ),
+            [table],
+        )
+        return [column[0] for column in self.cursor.fetchall()]
 
     def _connection_sanity_check(self) -> None:
         if self.connection is None or self.cursor is None or not self.is_connected():
