@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 import psycopg2
 from psycopg2 import sql
@@ -58,8 +58,45 @@ class PostgresService:
             return []
 
     def get_data(
-        self, table: str, columns: list[str], limit: int = 10
-    ) -> list[tuple[Any]]:
+        self,
+        table: str,
+        columns: list[str],
+        *,
+        limit: int = 500,
+        order_by_column: str | None = None,
+        order_by_direction: Literal["ASC", "DESC"] = "ASC",
+    ) -> list[tuple[Any, ...]]:
+        self._connection_sanity_check()
+        assert self.cursor is not None
+
+        column_idents = [sql.Identifier(col) for col in columns]
+
+        if order_by_column is not None:
+            order_by_clause = sql.SQL(" ORDER BY {} {}").format(
+                sql.Identifier(order_by_column),
+                sql.SQL(order_by_direction),
+            )
+        else:
+            order_by_clause = sql.SQL("")
+
+        query = sql.SQL("SELECT {} FROM {}{} LIMIT %s").format(
+            sql.SQL(", ").join(column_idents),
+            sql.Identifier(table),
+            order_by_clause,
+        )
+
+        self.cursor.execute(query, [limit])
+        return self.cursor.fetchall()
+
+    def get_dataa(
+        self,
+        table: str,
+        columns: list[str],
+        *,
+        limit: int = 500,
+        order_by_column: str | None = None,
+        order_by_direction: Literal["ASC", "DESC"] = "ASC",
+    ) -> list[tuple[Any, ...]]:
         self._connection_sanity_check()
         assert self.cursor is not None
         assert self.connection is not None

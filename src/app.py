@@ -16,11 +16,9 @@ from src.settings import AppConfig, DBConnection
 class DatabaseApp(App[None]):
     config: AppConfig
     CSS_PATH = "css/app.tcss"
-    theme = "tokyo-night"  # pyright: ignore [reportAssignmentType]
     BINDINGS = [
-        ("t", "toggle_dark", "Toggle dark mode"),
-        ("a", "add_db_connection", "Add database connection"),
-        ("d", "remove_db_connection", "Remove selected database connection"),
+        ("A", "add_db_connection", "Add database connection"),
+        ("D", "remove_db_connection", "Remove selected database connection"),
     ]
 
     def __init__(
@@ -32,6 +30,7 @@ class DatabaseApp(App[None]):
         ansi_color: bool = False,
     ):
         super().__init__(driver_class, css_path, watch_css, ansi_color)
+        self.theme = "tokyo-night"
         self.config = config
         self.postgres_service = PostgresService()
 
@@ -71,17 +70,12 @@ class DatabaseApp(App[None]):
         )
         yield Footer()
 
-    def action_toggle_dark(self) -> None:
-        self.theme = (
-            "textual-dark" if self.theme == "textual-light" else "textual-light"
-        )
-
     def on_database_tree_table_selected(
         self, event: DatabaseTree.TableSelected
     ) -> None:
         table = self.query_one(DatabaseTable)
         table.db_connection = event.connection
-        table.table = event.table
+        table.table_name = event.table
 
     def action_remove_db_connection(self) -> None:
         db_tree = self.query_one(DatabaseTree)
