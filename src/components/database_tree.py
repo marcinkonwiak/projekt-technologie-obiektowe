@@ -11,6 +11,8 @@ from src.settings import DBConnection
 
 
 class DatabaseTree(Widget):
+    CSS_PATH = "../css/database_tree.tcss"
+
     databases: Reactive[list[DBConnection]] = reactive(list, always_update=True)
     postgres_service: PostgresService
 
@@ -35,10 +37,13 @@ class DatabaseTree(Widget):
             self.table = table
 
     def compose(self) -> ComposeResult:
-        yield Tree(label="Databases")
+        yield Tree(id="db-tree", label="Databases")
 
     def on_mount(self) -> None:
         self._clear_and_populate_tree()
+        tree = self.query_one(Tree[DBConnection])
+        tree.show_root = False
+        tree.border_title = "Databases"
 
     def watch_databases(
         self, old_databases: list[DBConnection], new_databases: list[DBConnection]
@@ -47,7 +52,7 @@ class DatabaseTree(Widget):
             self._clear_and_populate_tree()
 
     def _clear_and_populate_tree(self) -> None:
-        tree: Tree[DBConnection] = self.query_one(Tree)  # pyright: ignore [reportUnknownVariableType]
+        tree = self.query_one(Tree[DBConnection])
         root = tree.root
 
         root.remove_children()

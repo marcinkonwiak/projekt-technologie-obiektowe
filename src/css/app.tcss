@@ -1,15 +1,39 @@
-#db-tree {
+#db-tree-container {
     dock: left;
     width: 30;
-    height: 100%;
+}
+
+#db-tree {
+    margin: 0 1;
+    margin-bottom: 1;
+    border: round $panel;
+    background: $background;
+    background-tint: $background;
+}
+
+#db-tree:focus {
+    border: round $primary;
 }
 
 #db-query-input {
     background: $background;
     height: 1fr;
     min-height: 3;
+    border: round $panel;
+}
+
+#db-table-container {
+    height: 10fr;
 }
 
 #db-table {
-    height: 10fr;
+    height: 1fr;
+    border: round $panel;
+    background: $background;
+    background-tint: $background;
+    scrollbar-size: 1 1;
+}
+
+#db-table:focus {
+    border: round $primary;
 }

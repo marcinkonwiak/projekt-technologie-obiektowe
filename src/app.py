@@ -12,6 +12,7 @@ from src.components.database_table import DatabaseTable
 from src.components.database_tree import DatabaseTree
 from src.service.postgres import PostgresService
 from src.settings import AppConfig, DBConnection
+from src.theme import default_theme
 
 
 class DatabaseApp(App[None]):
@@ -31,7 +32,6 @@ class DatabaseApp(App[None]):
         ansi_color: bool = False,
     ):
         super().__init__(driver_class, css_path, watch_css, ansi_color)
-        self.theme = "tokyo-night"
         self.config = config
         self.postgres_service = PostgresService()
 
@@ -39,20 +39,23 @@ class DatabaseApp(App[None]):
         yield DatabaseTree(
             postgres_service=self.postgres_service,
             databases=self.config.db_connections,
-            id="db-tree",
+            id="db-tree-container",
         )
         yield Vertical(
             TextArea(id="db-query-input", language="sql"),
             DatabaseTable(
                 postgres_service=self.postgres_service,
-                id="db-table",
+                id="db-table-container",
             ),
             id="main-container",
         )
         yield Footer()
 
     def on_mount(self) -> None:
+        self.register_theme(default_theme)
+        self.theme = "tokyo-night"
         text_area = self.query_one(TextArea)
+        text_area.border_title = "SQL"
         text_area.read_only = True
         text_area.can_focus = False
 

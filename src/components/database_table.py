@@ -48,11 +48,12 @@ class DatabaseTable(Widget):
             self.query = query
 
     def compose(self) -> ComposeResult:
-        yield DataTable[str](id="data-table")
+        yield DataTable[str](id="db-table")
 
     def on_mount(self) -> None:
         table = self.query_one(DataTable[str])
         table.zebra_stripes = True
+        table.border_title = "Data"
 
     def watch_table_name(self, old_table_name: str | None, new_table_name: str | None):
         if self.is_mounted and self.table_name and self.db_connection:
