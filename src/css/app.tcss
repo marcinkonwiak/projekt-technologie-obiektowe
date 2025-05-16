@@ -3,3 +3,13 @@
     width: 30;
     height: 100%;
 }
+
+#db-query-input {
+    background: $background;
+    height: 1fr;
+    min-height: 3;
+}
+
+#db-table {
+    height: 10fr;
+}

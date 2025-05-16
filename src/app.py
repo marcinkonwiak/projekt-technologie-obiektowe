@@ -1,7 +1,8 @@
 from textual._path import CSSPathType  # noqa
 from textual.app import App, ComposeResult
+from textual.containers import Vertical
 from textual.driver import Driver
-from textual.widgets import Footer
+from textual.widgets import Footer, TextArea
 
 from src.components.add_connection_modal import (
     AddConnectionModalScreen,
@@ -34,6 +35,27 @@ class DatabaseApp(App[None]):
         self.config = config
         self.postgres_service = PostgresService()
 
+    def compose(self) -> ComposeResult:
+        yield DatabaseTree(
+            postgres_service=self.postgres_service,
+            databases=self.config.db_connections,
+            id="db-tree",
+        )
+        yield Vertical(
+            TextArea(id="db-query-input", language="sql"),
+            DatabaseTable(
+                postgres_service=self.postgres_service,
+                id="db-table",
+            ),
+            id="main-container",
+        )
+        yield Footer()
+
+    def on_mount(self) -> None:
+        text_area = self.query_one(TextArea)
+        text_area.read_only = True
+        text_area.can_focus = False
+
     def action_add_db_connection(self) -> None:
         def check_result(result: AddConnectionModalScreenResult | None):
             if not result:
@@ -58,17 +80,11 @@ class DatabaseApp(App[None]):
 
         self.push_screen(AddConnectionModalScreen(), check_result)
 
-    def compose(self) -> ComposeResult:
-        yield DatabaseTree(
-            postgres_service=self.postgres_service,
-            databases=self.config.db_connections,
-            id="db-tree",
-        )
-        yield DatabaseTable(
-            postgres_service=self.postgres_service,
-            id="db-table",
-        )
-        yield Footer()
+    def on_database_table_query_updated(
+        self, event: DatabaseTable.QueryUpdated
+    ) -> None:
+        query_input = self.query_one(TextArea)
+        query_input.text = event.query
 
     def on_database_tree_table_selected(
         self, event: DatabaseTree.TableSelected

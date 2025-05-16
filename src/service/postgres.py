@@ -65,9 +65,10 @@ class PostgresService:
         limit: int = 500,
         order_by_column: str | None = None,
         order_by_direction: Literal["ASC", "DESC"] = "ASC",
-    ) -> list[tuple[Any, ...]]:
+    ) -> tuple[list[tuple[Any, ...]], str]:
         self._connection_sanity_check()
         assert self.cursor is not None
+        assert self.connection is not None
 
         column_idents = [sql.Identifier(col) for col in columns]
 
@@ -79,14 +80,16 @@ class PostgresService:
         else:
             order_by_clause = sql.SQL("")
 
-        query = sql.SQL("SELECT {} FROM {}{} LIMIT %s").format(
+        query = sql.SQL("SELECT {} FROM {}{} LIMIT {}").format(
             sql.SQL(", ").join(column_idents),
             sql.Identifier(table),
             order_by_clause,
+            sql.Literal(limit),
         )
+        query_string = query.as_string(self.connection)
+        self.cursor.execute(query)
 
-        self.cursor.execute(query, [limit])
-        return self.cursor.fetchall()
+        return self.cursor.fetchall(), query_string
 
     def get_dataa(
         self,

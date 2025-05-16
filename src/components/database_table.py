@@ -1,6 +1,7 @@
 from typing import Any, Literal
 
 from textual.app import ComposeResult
+from textual.message import Message
 from textual.reactive import Reactive, reactive
 from textual.widget import Widget
 from textual.widgets import DataTable
@@ -41,8 +42,17 @@ class DatabaseTable(Widget):
         self.db_connection = db_connection
         self.postgres_service = postgres_service
 
+    class QueryUpdated(Message):
+        def __init__(self, query: str):
+            super().__init__()
+            self.query = query
+
     def compose(self) -> ComposeResult:
         yield DataTable[str](id="data-table")
+
+    def on_mount(self) -> None:
+        table = self.query_one(DataTable[str])
+        table.zebra_stripes = True
 
     def watch_table_name(self, old_table_name: str | None, new_table_name: str | None):
         if self.is_mounted and self.table_name and self.db_connection:
@@ -67,7 +77,7 @@ class DatabaseTable(Widget):
 
         if self.postgres_service.connect(self.db_connection):
             columns = self.postgres_service.get_table_columns(self.table_name)
-            data = self.postgres_service.get_data(
+            data, query = self.postgres_service.get_data(
                 self.table_name,
                 columns,
                 order_by_column=self.order_by,
@@ -86,26 +96,20 @@ class DatabaseTable(Widget):
             columns=columns,
             data=data,
         )
+        self.post_message(self.QueryUpdated(query))
 
     def _update_table(self) -> None:
         table = self.query_one(DataTable[str])
-        assert self.db_connection
-        assert self.table_name
+        table.clear()
 
-        self._clear_table()
+        for column in table.columns.copy():
+            table.remove_column(column)
 
         for column in self.table_data.columns:
             table.add_column(column, key=column)
 
         for row in self.table_data.data:
             table.add_row(*[str(r) for r in row])
-
-    def _clear_table(self) -> None:
-        table = self.query_one(DataTable[str])
-        table.clear()
-        columns = table.columns.copy()
-        for column in columns:
-            table.remove_column(column)
 
     def _clear_filters(self) -> None:
         self.order_by = None
