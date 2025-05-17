@@ -43,10 +43,7 @@ class DatabaseApp(App[None]):
         )
         yield Vertical(
             TextArea(id="db-query-input", language="sql"),
-            DatabaseTable(
-                postgres_service=self.postgres_service,
-                id="db-table-container",
-            ),
+            DatabaseTable(id="db-table-container"),
             id="main-container",
         )
         yield Footer()

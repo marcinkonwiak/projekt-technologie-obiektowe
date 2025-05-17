@@ -25,6 +25,21 @@ class PostgresService:
             print(f"Error connecting to the database: {e}")
             return False
 
+    def _connection_sanity_check(self) -> None:
+        if self.connection is None or self.cursor is None or not self.is_connected():
+            raise ConnectionError("Not connected to the database")
+
+    def is_connected(self) -> bool:
+        if self.connection is None or self.cursor is None:
+            return False
+
+        try:
+            self.cursor.execute("SELECT 1")
+            return True
+        except Exception as e:
+            print(f"Error checking connection to the database: {e}")
+            return False
+
     def disconnect(self) -> bool:
         if not self.connection:
             return True
@@ -91,29 +106,6 @@ class PostgresService:
 
         return self.cursor.fetchall(), query_string
 
-    def get_dataa(
-        self,
-        table: str,
-        columns: list[str],
-        *,
-        limit: int = 500,
-        order_by_column: str | None = None,
-        order_by_direction: Literal["ASC", "DESC"] = "ASC",
-    ) -> list[tuple[Any, ...]]:
-        self._connection_sanity_check()
-        assert self.cursor is not None
-        assert self.connection is not None
-        column_names = [sql.Identifier(column) for column in columns]
-        self.cursor.execute(
-            sql.SQL("SELECT {} FROM {} LIMIT %s").format(
-                sql.SQL(", ").join(column_names),
-                sql.Identifier(table),
-            ),
-            [limit],
-        )
-
-        return self.cursor.fetchall()
-
     def get_table_columns(self, table: str) -> list[str]:
         self._connection_sanity_check()
         assert self.cursor is not None
@@ -126,18 +118,3 @@ class PostgresService:
             [table],
         )
         return [column[0] for column in self.cursor.fetchall()]
-
-    def _connection_sanity_check(self) -> None:
-        if self.connection is None or self.cursor is None or not self.is_connected():
-            raise ConnectionError("Not connected to the database")
-
-    def is_connected(self) -> bool:
-        if self.connection is None or self.cursor is None:
-            return False
-
-        try:
-            self.cursor.execute("SELECT 1")
-            return True
-        except Exception as e:
-            print(f"Error checking connection to the database: {e}")
-            return False
