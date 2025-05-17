@@ -3,10 +3,11 @@ from typing import Any, Literal
 from rich.style import Style
 from rich.text import Text
 from textual.app import ComposeResult
+from textual.containers import Horizontal
 from textual.message import Message
 from textual.reactive import Reactive, reactive
 from textual.widget import Widget
-from textual.widgets import DataTable
+from textual.widgets import DataTable, SelectionList
 
 from src.service.postgres import PostgresService
 from src.service.types import TableMetadata
@@ -26,9 +27,10 @@ class TableData:
 class DatabaseTable(Widget):
     db_connection: Reactive[DBConnection | None] = reactive(None)
     table_name: Reactive[str | None] = reactive(None)
-    table_metadata: Reactive[TableMetadata | None] = reactive(None)
+    table_metadata: TableMetadata | None = None
     table_data: Reactive[TableData] = reactive(TableData())
 
+    joins: list[str] = []
     order_by: str | None = None
     order_by_direction: Literal["ASC", "DESC"] = "ASC"
 
@@ -51,9 +53,20 @@ class DatabaseTable(Widget):
             self.query = query
 
     def compose(self) -> ComposeResult:
+        yield Horizontal(
+            SelectionList[str](id="join-options"),
+            SelectionList[str](),
+            SelectionList[str](),
+            id="db-table-options",
+        )
         yield DataTable[str](id="db-table")
 
     def on_mount(self) -> None:
+        join_options: SelectionList[str] = self.query_one(  # pyright: ignore [reportUnknownVariableType]
+            "#join-options", SelectionList
+        )
+        join_options.border_title = "Joins"
+
         table = self.query_one(DataTable[str])
         table.zebra_stripes = True
         table.border_title = "Data"
@@ -63,6 +76,7 @@ class DatabaseTable(Widget):
             self._clear_filters()
             if self._fetch_metadata():
                 self._fetch_data()
+                self._update_options()
 
     def watch_db_connection(
         self,
@@ -147,6 +161,20 @@ class DatabaseTable(Widget):
 
         for row in self.table_data.data:
             table.add_row(*[str(r) for r in row])
+
+    def _update_options(self) -> None:
+        assert self.table_metadata
+
+        options: SelectionList[str] = self.query_one("#join-options", SelectionList)  # pyright: ignore [reportUnknownVariableType]
+        options.clear_options()
+
+        option_id = 1
+        for column in self.table_metadata.columns:
+            if column.is_foreign_key:
+                options.add_option((column.name, option_id.__str__()))  # pyright: ignore [reportUnknownMemberType]
+                option_id += 1
+
+        options.refresh(layout=True)
 
     def _update_db_connection(self):
         assert self.db_connection
