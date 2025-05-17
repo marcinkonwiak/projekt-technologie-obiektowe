@@ -1,5 +1,7 @@
 from typing import Any, Literal
 
+from rich.style import Style
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.message import Message
 from textual.reactive import Reactive, reactive
@@ -29,6 +31,11 @@ class DatabaseTable(Widget):
 
     order_by: str | None = None
     order_by_direction: Literal["ASC", "DESC"] = "ASC"
+
+    foreign_key_style: Style = Style(
+        dim=True,
+        italic=True,
+    )
 
     def __init__(
         self,
@@ -78,10 +85,10 @@ class DatabaseTable(Widget):
 
     def watch_table_data(self, old_table_data: TableData, new_table_data: TableData):
         if self.is_mounted and self.table_name and self.db_connection:
-            self._update_table()
+            self._draw_table()
 
     def on_data_table_header_selected(self, event: DataTable.HeaderSelected) -> None:
-        self.order_by = event.label.plain
+        self.order_by = event.column_key.value
         self.order_by_direction = "ASC" if self.order_by_direction == "DESC" else "DESC"
         self._fetch_data()
 
@@ -114,7 +121,7 @@ class DatabaseTable(Widget):
         self.table_data = TableData(data=data)
         self.post_message(self.QueryUpdated(query))
 
-    def _update_table(self) -> None:
+    def _draw_table(self) -> None:
         assert self.table_metadata
 
         table = self.query_one(DataTable[str])
@@ -123,8 +130,20 @@ class DatabaseTable(Widget):
         for column in table.columns.copy():
             table.remove_column(column)
 
-        for column in self.table_metadata.columns:
-            table.add_column(column.name, key=column.name)
+        foreign_key_indexes: list[int] = []
+        for i, column in enumerate(self.table_metadata.columns):
+            right_padding = "  "
+            if column.name == self.order_by:
+                right_padding = " ↑" if self.order_by_direction == "ASC" else " ↓"
+
+            n = f"{column.name}{right_padding}"
+            if column.is_foreign_key:
+                foreign_key_indexes.append(i)
+                stylized_name = Text(n, style=self.foreign_key_style)
+            else:
+                stylized_name = n
+
+            table.add_column(stylized_name, key=column.name)
 
         for row in self.table_data.data:
             table.add_row(*[str(r) for r in row])
