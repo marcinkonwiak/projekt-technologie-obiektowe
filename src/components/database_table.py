@@ -7,27 +7,27 @@ from textual.widget import Widget
 from textual.widgets import DataTable
 
 from src.service.postgres import PostgresService
+from src.service.types import TableMetadata
 from src.settings import DBConnection
 
 
 class TableData:
-    columns: list[str]
     data: list[tuple[Any, ...]]
 
     def __init__(
         self,
-        columns: list[str] | None = None,
         data: list[tuple[Any, ...]] | None = None,
     ):
-        self.columns = columns if columns else []
         self.data = data if data else []
 
 
 class DatabaseTable(Widget):
     db_connection: Reactive[DBConnection | None] = reactive(None)
     table_name: Reactive[str | None] = reactive(None)
+    table_metadata: Reactive[TableMetadata | None] = reactive(None)
     table_data: Reactive[TableData] = reactive(TableData())
-    order_by: Reactive[str | None] = Reactive(None, always_update=True)
+
+    order_by: str | None = None
     order_by_direction: Literal["ASC", "DESC"] = "ASC"
 
     def __init__(
@@ -54,7 +54,8 @@ class DatabaseTable(Widget):
     def watch_table_name(self, old_table_name: str | None, new_table_name: str | None):
         if self.is_mounted and self.table_name and self.db_connection:
             self._clear_filters()
-            self._fetch_data()
+            if self._fetch_metadata():
+                self._fetch_data()
 
     def watch_db_connection(
         self,
@@ -75,10 +76,6 @@ class DatabaseTable(Widget):
                     severity="error",
                 )
 
-    def watch_order_by(self, old_order_by: str | None, new_order_by: str | None):
-        if self.is_mounted and self.table_name and self.db_connection:
-            self._fetch_data()
-
     def watch_table_data(self, old_table_data: TableData, new_table_data: TableData):
         if self.is_mounted and self.table_name and self.db_connection:
             self._update_table()
@@ -86,43 +83,48 @@ class DatabaseTable(Widget):
     def on_data_table_header_selected(self, event: DataTable.HeaderSelected) -> None:
         self.order_by = event.label.plain
         self.order_by_direction = "ASC" if self.order_by_direction == "DESC" else "DESC"
+        self._fetch_data()
+
+    def _fetch_metadata(self):
+        assert self.db_connection
+        assert self.table_name
+        if not (self.postgres_service.is_connected() and self._update_db_connection()):
+            self._notify_connection_error(self.db_connection.name)
+            return False
+
+        metadata = self.postgres_service.get_table_columns_metadata(self.table_name)
+        self.table_metadata = metadata
+        return True
 
     def _fetch_data(self):
         assert self.db_connection
         assert self.table_name
-        if not self.postgres_service.is_connected():
-            if not self._update_db_connection():
-                self.app.notify(
-                    f"Failed to reconnect to database {self.db_connection.name}",
-                    title="Connection Error",
-                    severity="error",
-                )
-                return
+        assert self.table_metadata
+        if not (self.postgres_service.is_connected() and self._update_db_connection()):
+            self._notify_connection_error(self.db_connection.name)
+            return
 
-        columns = self.postgres_service.get_table_columns(self.table_name)
         data, query = self.postgres_service.get_data(
             self.table_name,
-            columns,
+            [col.name for col in self.table_metadata.columns],
             order_by_column=self.order_by,
             order_by_direction=self.order_by_direction,
         )
-        self.postgres_service.disconnect()
 
-        self.table_data = TableData(
-            columns=columns,
-            data=data,
-        )
+        self.table_data = TableData(data=data)
         self.post_message(self.QueryUpdated(query))
 
     def _update_table(self) -> None:
+        assert self.table_metadata
+
         table = self.query_one(DataTable[str])
         table.clear()
 
         for column in table.columns.copy():
             table.remove_column(column)
 
-        for column in self.table_data.columns:
-            table.add_column(column, key=column)
+        for column in self.table_metadata.columns:
+            table.add_column(column.name, key=column.name)
 
         for row in self.table_data.data:
             table.add_row(*[str(r) for r in row])
@@ -135,3 +137,10 @@ class DatabaseTable(Widget):
     def _clear_filters(self) -> None:
         self.order_by = None
         self.order_by_direction = "ASC"
+
+    def _notify_connection_error(self, database_name: str) -> None:
+        self.app.notify(
+            f"Failed to reconnect to database {database_name}",
+            title="Connection Error",
+            severity="error",
+        )

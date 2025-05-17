@@ -3,6 +3,7 @@ from typing import Any, Literal
 import psycopg2
 from psycopg2 import sql
 
+from src.service.types import Column, TableMetadata
 from src.settings import DBConnection
 
 
@@ -106,15 +107,76 @@ class PostgresService:
 
         return self.cursor.fetchall(), query_string
 
-    def get_table_columns(self, table: str) -> list[str]:
+    def get_table_columns_metadata(self, table: str) -> TableMetadata:
         self._connection_sanity_check()
         assert self.cursor is not None
         assert self.connection is not None
 
         self.cursor.execute(
-            sql.SQL(
-                "SELECT column_name FROM information_schema.columns WHERE table_name = %s"
-            ),
+            sql.SQL("""
+            WITH foreign_key_info AS (SELECT con.conname             AS constraint_name,
+                                             con.conrelid::regclass  AS referencing_table,
+                                             a_ref.attname           AS referencing_column,
+                                             con.confrelid::regclass AS referenced_table,
+                                             a_fkey.attname          AS referenced_column,
+                                             ns_ref.nspname          AS referencing_schema_name,
+                                             c_ref.relname           AS referencing_table_name_only,
+                                             ns_fkey.nspname         AS referenced_schema_name,
+                                             c_fkey.relname          AS referenced_table_name_only
+                                      FROM pg_constraint con
+                                               JOIN
+                                           pg_class c_ref ON con.conrelid = c_ref.oid
+                                               JOIN
+                                           pg_namespace ns_ref ON c_ref.relnamespace = ns_ref.oid
+                                               JOIN
+                                           pg_class c_fkey ON con.confrelid = c_fkey.oid
+                                               JOIN
+                                           pg_namespace ns_fkey ON c_fkey.relnamespace = ns_fkey.oid
+                                               JOIN
+                                           UNNEST(con.conkey) WITH ORDINALITY AS u_ref(attnum, ord)
+                                           ON TRUE
+                                               JOIN
+                                           pg_attribute a_ref ON u_ref.attnum = a_ref.attnum AND
+                                                                 a_ref.attrelid = con.conrelid
+                                               JOIN
+                                           UNNEST(con.confkey) WITH ORDINALITY AS u_fkey(attnum, ord)
+                                           ON u_ref.ord = u_fkey.ord
+                                               JOIN
+                                           pg_attribute a_fkey ON u_fkey.attnum = a_fkey.attnum AND
+                                                                  a_fkey.attrelid = con.confrelid
+                                      WHERE con.contype = 'f')
+            SELECT isc.column_name,
+                   isc.data_type         AS column_type,
+                   CASE
+                       WHEN fki.referencing_column IS NOT NULL THEN TRUE
+                       ELSE FALSE
+                       END               AS is_foreign_key,
+                   fki.referenced_table  AS fk_references_table,
+                   fki.referenced_column AS fk_references_column,
+                   fki.constraint_name   AS fk_constraint_name
+            FROM information_schema.columns isc
+                     LEFT JOIN
+                 foreign_key_info fki ON isc.table_schema = fki.referencing_schema_name
+                     AND isc.table_name = fki.referencing_table_name_only
+                     AND isc.column_name = fki.referencing_column
+            WHERE isc.table_schema = 'public'
+              AND isc.table_name = %s
+            ORDER BY isc.ordinal_position;
+            """),
             [table],
         )
-        return [column[0] for column in self.cursor.fetchall()]
+        columns = self.cursor.fetchall()
+
+        return TableMetadata(
+            table_name=table,
+            columns=[
+                Column(
+                    name=column[0],
+                    type=column[1],
+                    is_foreign_key=column[2],
+                    foreign_key_table=column[3],
+                    foreign_key_column=column[4],
+                )
+                for column in columns
+            ],
+        )
