@@ -12,3 +12,9 @@ class Column(BaseModel):
 class TableMetadata(BaseModel):
     table_name: str
     columns: list[Column]
+
+    def get_column_names(self) -> list[str]:
+        return [column.name for column in self.columns]
+
+    def get_joinable_column_names(self) -> list[str]:
+        return [column.name for column in self.columns if column.is_foreign_key]

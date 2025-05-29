@@ -8,6 +8,10 @@ from src.components.add_connection_modal import (
     AddConnectionModalScreen,
     AddConnectionModalScreenResult,
 )
+from src.components.add_query import (
+    AddQueryOptionModalScreen,
+    AddQueryOptionModalScreenResult,
+)
 from src.components.database_table import DatabaseTable
 from src.components.database_tree import DatabaseTree
 from src.service.postgres import PostgresService
@@ -21,6 +25,7 @@ class DatabaseApp(App[None]):
     BINDINGS = [
         ("A", "add_db_connection", "Add database connection"),
         ("D", "remove_db_connection", "Remove selected database connection"),
+        ("J", "add_query", "Add Query Option"),
     ]
 
     def __init__(
@@ -79,6 +84,28 @@ class DatabaseApp(App[None]):
             self.query_one(DatabaseTree).databases = self.config.db_connections
 
         self.push_screen(AddConnectionModalScreen(), check_result)
+
+    def action_add_query(self) -> None:
+        table = self.query_one(DatabaseTable)
+        if not table.db_connection or not table.table_name or not table.table_metadata:
+            self.notify(
+                "Please select a database connection and table first",
+                title="Error",
+                severity="error",
+                timeout=3,
+            )
+            return
+
+        def check_result(result: AddQueryOptionModalScreenResult | None):
+            if not result:
+                return
+
+            table.handle_query_option(result)
+
+        self.push_screen(
+            AddQueryOptionModalScreen(table_metadata=table.table_metadata),
+            check_result,
+        )
 
     def on_database_table_query_updated(
         self, event: DatabaseTable.QueryUpdated

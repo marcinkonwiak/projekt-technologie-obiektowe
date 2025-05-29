@@ -1,0 +1,40 @@
+AddQueryOptionModalScreen {
+    align: center middle;
+    background: $background 50%;
+}
+
+#modal {
+    padding: 0 1;
+    width: 60;
+    height: 40;
+    background: $surface 80%;
+    content-align: center middle;
+}
+
+#add-query-option-label {
+    height: 1;
+    width: 1fr;
+    content-align: center middle;
+    margin: 1 0;
+}
+
+.field-label {
+    padding: 1 0 0 1;
+}
+
+Input {
+    width: 1fr;
+    height: 3;
+}
+
+#button-grid {
+    height: 1fr;
+    margin: 1 0;
+    layout: grid;
+    grid-size: 2 1;
+}
+
+Button {
+    width: 100%;
+    margin: 0 2;
+}

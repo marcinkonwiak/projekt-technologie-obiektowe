@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from rich.style import Style
@@ -9,9 +10,11 @@ from textual.reactive import Reactive, reactive
 from textual.widget import Widget
 from textual.widgets import DataTable, SelectionList
 
+from src.components.add_query import AddQueryOptionModalScreenResult
 from src.service.postgres import PostgresService
 from src.service.types import TableMetadata
 from src.settings import DBConnection
+from src.types import QueryOptionCondition
 
 
 class TableData:
@@ -24,13 +27,19 @@ class TableData:
         self.data = data if data else []
 
 
+@dataclass
+class QueryOption:
+    column_name: str
+    condition: QueryOptionCondition
+
+
 class DatabaseTable(Widget):
     db_connection: Reactive[DBConnection | None] = reactive(None)
     table_name: Reactive[str | None] = reactive(None)
     table_metadata: TableMetadata | None = None
     table_data: Reactive[TableData] = reactive(TableData())
 
-    joins: list[str] = []
+    query_options: Reactive[list[QueryOption]] = reactive(list)
     order_by: str | None = None
     order_by_direction: Literal["ASC", "DESC"] = "ASC"
 
@@ -54,18 +63,16 @@ class DatabaseTable(Widget):
 
     def compose(self) -> ComposeResult:
         yield Horizontal(
-            SelectionList[str](id="join-options"),
-            SelectionList[str](),
-            SelectionList[str](),
+            SelectionList[str](id="query-options"),
             id="db-table-options",
         )
         yield DataTable[str](id="db-table")
 
     def on_mount(self) -> None:
-        join_options: SelectionList[str] = self.query_one(  # pyright: ignore [reportUnknownVariableType]
-            "#join-options", SelectionList
+        query_options: SelectionList[str] = self.query_one(  # pyright: ignore [reportUnknownVariableType]
+            "#query-options", SelectionList
         )
-        join_options.border_title = "Joins"
+        query_options.border_title = "Query Options"
 
         table = self.query_one(DataTable[str])
         table.zebra_stripes = True
@@ -76,7 +83,7 @@ class DatabaseTable(Widget):
             self._clear_filters()
             if self._fetch_metadata():
                 self._fetch_data()
-                self._update_options()
+                self._clear_query_options()
 
     def watch_db_connection(
         self,
@@ -162,17 +169,23 @@ class DatabaseTable(Widget):
         for row in self.table_data.data:
             table.add_row(*[str(r) for r in row])
 
-    def _update_options(self) -> None:
-        assert self.table_metadata
+    def _clear_query_options(self) -> None:
+        self.query_options = []
+        self.mutate_reactive(DatabaseTable.query_options)
 
-        options: SelectionList[str] = self.query_one("#join-options", SelectionList)  # pyright: ignore [reportUnknownVariableType]
+    def watch_query_options(self) -> None:
+        options: SelectionList[str] = self.query_one("#query-options", SelectionList)  # pyright: ignore [reportUnknownVariableType]
         options.clear_options()
 
         option_id = 1
-        for column in self.table_metadata.columns:
-            if column.is_foreign_key:
-                options.add_option((column.name, option_id.__str__()))  # pyright: ignore [reportUnknownMemberType]
-                option_id += 1
+        for option in self.query_options:
+            options.add_option(  # pyright: ignore [reportUnknownMemberType]
+                (
+                    f"{option.condition.to_pretty_string()} {option.column_name} ",
+                    option_id.__str__(),
+                )
+            )
+            option_id += 1
 
         options.refresh(layout=True)
 
@@ -191,3 +204,12 @@ class DatabaseTable(Widget):
             title="Connection Error",
             severity="error",
         )
+
+    def handle_query_option(self, result: AddQueryOptionModalScreenResult) -> None:
+        self.query_options.append(
+            QueryOption(
+                column_name=result.column_name,
+                condition=result.condition,
+            )
+        )
+        self.mutate_reactive(DatabaseTable.query_options)
