@@ -173,7 +173,7 @@ class DatabaseTable(Widget):
         self.query_options = []
         self.mutate_reactive(DatabaseTable.query_options)
 
-    def watch_query_options(self) -> None:
+    def watch_query_options(self) -> None:  # Added self
         options: SelectionList[str] = self.query_one("#query-options", SelectionList)  # pyright: ignore [reportUnknownVariableType]
         options.clear_options()
 
@@ -213,3 +213,14 @@ class DatabaseTable(Widget):
             )
         )
         self.mutate_reactive(DatabaseTable.query_options)
+
+    def on_selection_list_selection_toggled(
+        self, event: SelectionList.SelectionToggled[str]
+    ) -> None:
+        self.app.notify(
+            event.__str__(),
+            title="1",
+        )
+        del self.query_options[event.selection_index]
+        self.mutate_reactive(DatabaseTable.query_options)
+        return
