@@ -4,7 +4,7 @@ from textual.app import ComposeResult
 from textual.containers import Container, Vertical
 from textual.reactive import Reactive
 from textual.screen import Screen
-from textual.widgets import Button, Label, Select, Static
+from textual.widgets import Button, Label, Select
 
 from src.service.types import TableMetadata
 from src.types import QueryOptionCondition
@@ -81,8 +81,10 @@ class AddQueryOptionModalScreen(Screen[AddQueryOptionModalScreenResult]):
             self._mount_aggregate_content(container)
         elif new_value == QueryOptionCondition.AVG:
             self._mount_aggregate_content(container)
-        else:
-            container.mount(Static(str(new_value), id="no-condition"))
+        elif new_value == QueryOptionCondition.MAX:
+            self._mount_aggregate_content(container)
+        elif new_value == QueryOptionCondition.MIN:
+            self._mount_aggregate_content(container)
 
     def _mount_join_content(self, container: Container) -> None:
         container.mount(
@@ -118,18 +120,37 @@ class AddQueryOptionModalScreen(Screen[AddQueryOptionModalScreenResult]):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "add-button":
-            self.dismiss(self.dispatch_add_message())
+            message = self.dispatch_add_message()
+            if not message:
+                return
+            self.dismiss(message)
         elif event.button.id == "cancel-button":
             self.dismiss()
 
-    def dispatch_add_message(self) -> AddQueryOptionModalScreenResult:
+    def dispatch_add_message(self) -> AddQueryOptionModalScreenResult | None:
         condition = self._selected_condition
-        assert condition is not None
 
-        select: Select[str] = self.query_one(".column-name-select", Select)  # pyright: ignore [reportUnknownVariableType]
-        assert isinstance(select, Select)
-        column_name = select.value
-        assert isinstance(column_name, str)
+        try:
+            select: Select[str] = self.query_one(".column-name-select", Select)  # pyright: ignore [reportUnknownVariableType]
+            assert isinstance(select, Select)
+            column_name = select.value
+        except Exception:
+            self.notify(
+                "Invalid options selected",
+                title="Error",
+                severity="error",
+                timeout=3,
+            )
+            return None
+
+        if not condition or not column_name or not isinstance(column_name, str):
+            self.notify(
+                "Invalid options selected",
+                title="Error",
+                severity="error",
+                timeout=3,
+            )
+            return None
 
         return AddQueryOptionModalScreenResult(
             condition=condition,

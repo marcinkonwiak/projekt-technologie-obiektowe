@@ -217,10 +217,6 @@ class DatabaseTable(Widget):
     def on_selection_list_selection_toggled(
         self, event: SelectionList.SelectionToggled[str]
     ) -> None:
-        self.app.notify(
-            event.__str__(),
-            title="1",
-        )
         del self.query_options[event.selection_index]
         self.mutate_reactive(DatabaseTable.query_options)
         return

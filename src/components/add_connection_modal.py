@@ -39,14 +39,11 @@ class AddConnectionModalScreen(Screen[AddConnectionModalScreenResult]):
             yield Input(id="database-input", placeholder="database")
 
             with Container(id="button-grid"):
-                yield Button("Test", variant="success", id="test-button")
                 yield Button("Add", variant="primary", id="add-button")
                 yield Button("Cancel", variant="default", id="cancel-button")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "test-button":
-            self.app.exit()
-        elif event.button.id == "add-button":
+        if event.button.id == "add-button":
             self.dismiss(self.create_connection_create_message())
         elif event.button.id == "cancel-button":
             self.dismiss()
