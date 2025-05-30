@@ -4,7 +4,7 @@ from textual.app import ComposeResult
 from textual.containers import Container, Vertical
 from textual.reactive import Reactive
 from textual.screen import Screen
-from textual.widgets import Button, Label, Select
+from textual.widgets import Button, Input, Label, Select
 
 from src.service.types import TableMetadata
 from src.types import QueryOptionCondition
@@ -14,6 +14,8 @@ from src.types import QueryOptionCondition
 class AddQueryOptionModalScreenResult:
     condition: QueryOptionCondition
     column_name: str
+    where_condition: str | None = None
+    where_value: str | None = None
 
 
 class AddQueryOptionModalScreen(Screen[AddQueryOptionModalScreenResult]):
@@ -70,7 +72,7 @@ class AddQueryOptionModalScreen(Screen[AddQueryOptionModalScreenResult]):
         container.remove_children()
 
         if new_value == QueryOptionCondition.WHERE:
-            container.mount(Label("WHERE", classes="field-label"))
+            self._mount_where_content(container)
         elif new_value == QueryOptionCondition.LEFT_JOIN:
             self._mount_join_content(container)
         elif new_value == QueryOptionCondition.INNER_JOIN:
@@ -85,6 +87,32 @@ class AddQueryOptionModalScreen(Screen[AddQueryOptionModalScreenResult]):
             self._mount_aggregate_content(container)
         elif new_value == QueryOptionCondition.MIN:
             self._mount_aggregate_content(container)
+
+    def _mount_where_content(self, container: Container) -> None:
+        container.mount(
+            Label("Column name", classes="field-label"),
+            Select(
+                [
+                    (column_name, column_name)
+                    for column_name in self._table_metadata.get_column_names()
+                ],
+                classes="column-name-select",
+            ),
+            Label("Condition", classes="field-label"),
+            Select(
+                [
+                    ("=", "="),
+                    ("!=", "!="),
+                    ("<", "<"),
+                    (">", ">"),
+                    ("<=", "<="),
+                    (">=", ">="),
+                ],
+                classes="where-condition-select",
+            ),
+            Label("Value", classes="field-label"),
+            Input(classes="where-value-input"),
+        )
 
     def _mount_join_content(self, container: Container) -> None:
         container.mount(
@@ -152,7 +180,36 @@ class AddQueryOptionModalScreen(Screen[AddQueryOptionModalScreenResult]):
             )
             return None
 
+        where_condition = None
+        where_value = None
+        if condition == QueryOptionCondition.WHERE:
+            try:
+                where_condition_select: Select[str] = self.query_one(  # pyright: ignore [reportUnknownVariableType]
+                    ".where-condition-select", Select
+                )
+                assert isinstance(where_condition_select, Select)
+                where_condition = where_condition_select.value
+                if not where_condition or not isinstance(where_condition, str):
+                    raise ValueError("Where condition cannot be empty")
+
+                where_value_input: Input = self.query_one(".where-value-input", Input)
+                assert isinstance(where_value_input, Input)
+                where_value = where_value_input.value
+
+                if not where_value:
+                    raise ValueError("Where value cannot be empty")
+            except Exception as e:
+                self.notify(
+                    f"Invalid options selected: {str(e)}",
+                    title="Error",
+                    severity="error",
+                    timeout=3,
+                )
+                return None
+
         return AddQueryOptionModalScreenResult(
             condition=condition,
             column_name=column_name,
+            where_condition=where_condition,
+            where_value=where_value,
         )
