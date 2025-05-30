@@ -92,7 +92,7 @@ class AddQueryOptionModalScreen(Screen[AddQueryOptionModalScreenResult]):
                     (table_name, table_name)
                     for table_name in self._table_metadata.get_joinable_column_names()
                 ],
-                id="column-name-field",
+                classes="column-name-select",
             ),
         )
 
@@ -104,7 +104,7 @@ class AddQueryOptionModalScreen(Screen[AddQueryOptionModalScreenResult]):
                     (column_name, column_name)
                     for column_name in self._table_metadata.get_column_names()
                 ],
-                id="column-name-field",
+                classes="column-name-select",
             ),
         )
 
@@ -126,7 +126,7 @@ class AddQueryOptionModalScreen(Screen[AddQueryOptionModalScreenResult]):
         condition = self._selected_condition
         assert condition is not None
 
-        select: Select[str] = self.query_one("#column-name-field", Select)  # pyright: ignore [reportUnknownVariableType]
+        select: Select[str] = self.query_one(".column-name-select", Select)  # pyright: ignore [reportUnknownVariableType]
         assert isinstance(select, Select)
         column_name = select.value
         assert isinstance(column_name, str)
