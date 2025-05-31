@@ -113,11 +113,14 @@ class AddQueryOptionModalScreen(Screen[AddQueryOptionModalScreenResult]):
                     (">=", ">="),
                     ("LIKE", "LIKE"),
                     ("ILIKE", "ILIKE"),
+                    ("IS NULL", "IS NULL"),
+                    ("IS NOT NULL", "IS NOT NULL"),
                 ],
                 classes="where-condition-select",
+                id="where-condition-select",
             ),
-            Label("Value", classes="field-label"),
-            Input(classes="where-value-input"),
+            Label("Value", classes="field-label", id="where-value-label"),
+            Input(classes="where-value-input", id="where-value-input"),
         )
 
     def _mount_join_content(self, container: Container) -> None:
@@ -161,6 +164,19 @@ class AddQueryOptionModalScreen(Screen[AddQueryOptionModalScreenResult]):
                 self._selected_condition = event.value
             else:
                 self._selected_condition = None
+        elif event.select.id == "where-condition-select":
+            value_label = self.query_one("#where-value-label", Label)
+            value_input = self.query_one("#where-value-input", Input)
+            # Ensure we are dealing with a string value before comparison
+            selected_where_condition = (
+                str(event.value) if event.value is not NoSelection else None
+            )
+            if selected_where_condition in ("IS NULL", "IS NOT NULL"):
+                value_label.display = False
+                value_input.display = False
+            else:
+                value_label.display = True
+                value_input.display = True
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "add-button":
@@ -270,19 +286,25 @@ class AddQueryOptionModalScreen(Screen[AddQueryOptionModalScreenResult]):
         if condition == QueryOptionCondition.WHERE:
             try:
                 where_condition_select: Select[str] = self.query_one(  # pyright: ignore [reportUnknownVariableType]
-                    ".where-condition-select", Select
+                    "#where-condition-select", Select
                 )
                 assert isinstance(where_condition_select, Select)
                 where_condition = where_condition_select.value
                 if not where_condition or not isinstance(where_condition, str):
                     raise ValueError("Where condition cannot be empty")
 
-                where_value_input: Input = self.query_one(".where-value-input", Input)
-                assert isinstance(where_value_input, Input)
-                where_value = where_value_input.value
+                # Only get where_value if the condition is not IS NULL or IS NOT NULL
+                if where_condition not in ("IS NULL", "IS NOT NULL"):
+                    where_value_input: Input = self.query_one(
+                        "#where-value-input", Input
+                    )
+                    assert isinstance(where_value_input, Input)
+                    where_value = where_value_input.value
 
-                if not where_value:
-                    raise ValueError("Where value cannot be empty")
+                    if not where_value:
+                        raise ValueError(
+                            "Where value cannot be empty for this condition"
+                        )
             except Exception as e:
                 self.notify(
                     f"Invalid options selected: {str(e)}",
