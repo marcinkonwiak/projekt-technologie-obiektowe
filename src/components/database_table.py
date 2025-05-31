@@ -32,6 +32,7 @@ class DatabaseTable(Widget):
     table_name: Reactive[str | None] = reactive(None)
     table_metadata: TableMetadata | None = None
     table_data: Reactive[TableData] = reactive(TableData())
+    displayed_columns: Reactive[list[str]] = reactive(list)
 
     query_options: Reactive[list[QueryOption]] = reactive(list)
     order_by: str | None = None
@@ -103,9 +104,16 @@ class DatabaseTable(Widget):
             self._draw_table()
 
     def on_data_table_header_selected(self, event: DataTable.HeaderSelected) -> None:
-        self.order_by = event.column_key.value
-        self.order_by_direction = "ASC" if self.order_by_direction == "DESC" else "DESC"
-        self._fetch_data()
+        if event.column_key.value in self.displayed_columns:
+            self.order_by = event.column_key.value
+            self.order_by_direction = (
+                "ASC" if self.order_by_direction == "DESC" else "DESC"
+            )
+            self._fetch_data()
+        else:
+            log.warning(
+                f"Order by on column '{event.column_key.value}' not possible as it's not in displayed columns."
+            )
 
     def _fetch_metadata(self):
         assert self.db_connection
@@ -126,34 +134,33 @@ class DatabaseTable(Widget):
             self._notify_connection_error(self.db_connection.name)
             return
 
+        cols_for_query_builder = self.table_metadata.columns
+
         query_composed = self.postgres_service.build_query_with_options(
             self.table_name,
-            self.table_metadata.columns,
+            cols_for_query_builder,
             query_options=self.query_options,
-        )
-        query_string = (
-            query_composed.as_string(self.postgres_service.connection)
-            if self.postgres_service.connection
-            else "No connection or query options didn't build"
-        )
-        log(f"🔥🔥🔥🔥🔥🔥🔥🔥🔥 {query_string}")
-
-        data, executed_query_string = self.postgres_service.get_data(
-            self.table_name,
-            [col.name for col in self.table_metadata.columns],
             order_by_column=self.order_by,
             order_by_direction=self.order_by_direction,
         )
 
-        self.table_data = TableData(data=data)
-        self.post_message(
-            self.QueryUpdated(
-                query_string if self.query_options else executed_query_string
-            )
+        data, query_string, actual_column_names = (
+            self.postgres_service.get_data_from_query(query_composed)
         )
+        log(f"Executed query: {query_string}")
+        log(f"Returned columns: {actual_column_names}")
+
+        self.table_data = TableData(data=data)
+        self.displayed_columns = actual_column_names
+        self.post_message(self.QueryUpdated(query_string))
 
     def _draw_table(self) -> None:
-        assert self.table_metadata
+        if not self.displayed_columns:
+            table = self.query_one(DataTable[str])
+            table.clear()
+            for column in table.columns.copy():
+                table.remove_column(column)
+            return
 
         table = self.query_one(DataTable[str])
         table.clear()
@@ -161,20 +168,25 @@ class DatabaseTable(Widget):
         for column in table.columns.copy():
             table.remove_column(column)
 
-        foreign_key_indexes: list[int] = []
-        for i, column in enumerate(self.table_metadata.columns):
+        original_metadata_map = {
+            col.name: col
+            for col in (self.table_metadata.columns if self.table_metadata else [])
+        }
+
+        for col_name_from_query in self.displayed_columns:
             right_padding = "  "
-            if column.name == self.order_by:
+            if col_name_from_query == self.order_by:
                 right_padding = " ↑" if self.order_by_direction == "ASC" else " ↓"
 
-            n = f"{column.name}{right_padding}"
-            if column.is_foreign_key:
-                foreign_key_indexes.append(i)
-                stylized_name = Text(n, style=self.foreign_key_style)
-            else:
-                stylized_name = n
+            label_text = f"{col_name_from_query}{right_padding}"
 
-            table.add_column(stylized_name, key=column.name)
+            original_col_meta = original_metadata_map.get(col_name_from_query)
+            if original_col_meta and original_col_meta.is_foreign_key:
+                stylized_name = Text(label_text, style=self.foreign_key_style)
+            else:
+                stylized_name = label_text
+
+            table.add_column(stylized_name, key=col_name_from_query)
 
         for row in self.table_data.data:
             table.add_row(*[str(r) for r in row])

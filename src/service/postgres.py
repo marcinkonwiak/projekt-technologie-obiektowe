@@ -112,6 +112,29 @@ class PostgresService:
 
         return self.cursor.fetchall(), query_string
 
+    def get_data_from_query(
+        self,
+        query: sql.Composed,
+    ) -> tuple[list[tuple[Any, ...]], str, list[str]]:
+        """
+        Executes a given composed query and returns the data, the query string,
+        and the list of column names from the result.
+        """
+        self._connection_sanity_check()
+        assert self.cursor is not None
+        assert self.connection is not None
+
+        query_string = query.as_string(self.connection)
+        self.cursor.execute(query)
+
+        data = self.cursor.fetchall()
+
+        column_names: list[str] = []
+        if self.cursor.description:
+            column_names = [desc[0] for desc in self.cursor.description]
+
+        return data, query_string, column_names
+
     def get_table_columns_metadata(self, table: str) -> TableMetadata:
         self._connection_sanity_check()
         assert self.cursor is not None
@@ -191,6 +214,8 @@ class PostgresService:
         table_name: str,
         base_columns: list[Column],
         query_options: list[QueryOption],
+        order_by_column: str | None = None,
+        order_by_direction: Literal["ASC", "DESC"] = "ASC",
     ) -> sql.Composed:
         """
         Builds a SQL query based on a list of QueryOption objects.
@@ -199,6 +224,8 @@ class PostgresService:
             table_name: The name of the table to query.
             base_columns: A list of column names to select if no aggregate options are provided.
             query_options: A list of QueryOption objects to define aggregates and WHERE conditions.
+            order_by_column: The column to order the results by.
+            order_by_direction: The direction to order the results by.
 
         Returns:
             A psycopg2.sql.Composed object representing the built query.
@@ -240,15 +267,23 @@ class PostgresService:
         select_expressions: list[sql.Composed] = []
         if aggregate_opts:
             for agg_opt in aggregate_opts:
-                if agg_opt.column_name:  # Ensure column_name is present
-                    select_expressions.append(
-                        sql.SQL("{}({})").format(
-                            sql.SQL(
-                                agg_opt.condition.value.upper()
-                            ),  # e.g., SUM, COUNT
-                            sql.Identifier(agg_opt.column_name),
+                if agg_opt.column_name:
+                    if agg_opt.column_name == "*":  # Handle COUNT(*)
+                        select_expressions.append(
+                            sql.SQL("{}(*)").format(
+                                sql.SQL(agg_opt.condition.value.upper())
+                            )
                         )
-                    )
+                    else:
+                        select_expressions.append(
+                            sql.SQL(
+                                "{}({}.{})"
+                            ).format(  # Qualify column with table_name
+                                sql.SQL(agg_opt.condition.value.upper()),
+                                sql.Identifier(table_name),
+                                sql.Identifier(agg_opt.column_name),
+                            )
+                        )
             if not select_expressions:
                 raise ValueError(
                     "Aggregate options were provided but resulted in no selectable fields. "
@@ -260,29 +295,27 @@ class PostgresService:
                 raise ValueError(
                     "base_columns must be provided if no aggregate options are specified."
                 )
+            # Qualify base columns with table_name
             select_clause = sql.SQL(", ").join(
-                map(lambda col: sql.Identifier(col.name), base_columns)
+                map(
+                    lambda col: sql.SQL("{}.{}").format(
+                        sql.Identifier(table_name), sql.Identifier(col.name)
+                    ),
+                    base_columns,
+                )
             )
 
         # FROM clause
         from_clause = sql.SQL("").join(
             [sql.Identifier(table_name)]
             + [
-                sql.SQL(" {} JOIN {} ON {}.{} = {}.{}").format(
-                    sql.SQL(
-                        opt.condition.value.upper().replace("_", " ")
-                    ),  # LEFT JOIN or INNER JOIN
+                sql.SQL(" {} {} ON {}.{} = {}.{}").format(
+                    sql.SQL(opt.condition.value.upper().replace("_", " ")),
                     sql.Identifier(opt.join_to_table),
-                    sql.Identifier(
-                        table_name
-                    ),  # Assuming join is always from the base table
-                    sql.Identifier(
-                        opt.column_name
-                    ),  # This is the column in the base table
+                    sql.Identifier(table_name),
+                    sql.Identifier(opt.column_name),
                     sql.Identifier(opt.join_to_table),
-                    sql.Identifier(
-                        opt.join_to_column
-                    ),  # This is the column in the table being joined
+                    sql.Identifier(opt.join_to_column),
                 )
                 for opt in join_opts
                 if opt.join_to_table and opt.column_name and opt.join_to_column
@@ -322,11 +355,44 @@ class PostgresService:
                 where_conditions
             )
 
+        # ORDER BY clause
+        order_by_sql_clause = sql.SQL("")
+        if order_by_column:
+            # Need to decide how to qualify order_by_column.
+            # If it could be from a joined table, this might need more complex handling
+            # or rely on the column being unambiguously named in the select list (e.g. via alias).
+            # For now, assume it refers to a column from the base table_name or is unambiguous.
+            # If the column names in SELECT are qualified (e.g., table.column),
+            # then order_by_column should ideally match that qualified name or an alias.
+            # Let's assume for now that if displayed columns are qualified like "table.column",
+            # order_by_column will also be passed in that format from the UI if needed.
+            # Or, if it's an aggregate, it might not be directly orderable this way without an alias.
+
+            # Simple case: if order_by_column contains a '.', assume it's already qualified.
+            if "." in order_by_column:
+                order_by_sql_clause = sql.SQL(" ORDER BY {} {}").format(
+                    sql.SQL(
+                        order_by_column
+                    ),  # Treat as already qualified or an expression/alias
+                    sql.SQL(order_by_direction),
+                )
+            else:
+                # If not qualified, assume it's from the base table for now.
+                # This might be ambiguous if a joined table also has this column name.
+                # A more robust solution would be to ensure order_by_column refers to an alias
+                # or a uniquely named column from the SELECT list generated earlier.
+                order_by_sql_clause = sql.SQL(" ORDER BY {}.{} {}").format(
+                    sql.Identifier(table_name),
+                    sql.Identifier(order_by_column),
+                    sql.SQL(order_by_direction),
+                )
+
         # Assemble the query
-        final_query = sql.SQL("SELECT {} FROM {}{}").format(
+        final_query = sql.SQL("SELECT {} FROM {}{}{}").format(
             select_clause,
             from_clause,
             where_sql_clause,
+            order_by_sql_clause,  # Add order by clause
         )
 
         return final_query
