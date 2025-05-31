@@ -268,42 +268,71 @@ class PostgresService:
         if aggregate_opts:
             for agg_opt in aggregate_opts:
                 if agg_opt.column_name:
-                    if agg_opt.column_name == "*":  # Handle COUNT(*)
+                    if agg_opt.column_name == "*":
                         select_expressions.append(
                             sql.SQL("{}(*)").format(
                                 sql.SQL(agg_opt.condition.value.upper())
                             )
                         )
                     else:
+                        alias = sql.Identifier(
+                            f"{agg_opt.condition.value}_{agg_opt.column_name}"
+                        )
                         select_expressions.append(
-                            sql.SQL(
-                                "{}({}.{})"
-                            ).format(  # Qualify column with table_name
+                            sql.SQL("{}({}.{}) AS {}").format(
                                 sql.SQL(agg_opt.condition.value.upper()),
                                 sql.Identifier(table_name),
                                 sql.Identifier(agg_opt.column_name),
+                                alias,
                             )
                         )
             if not select_expressions:
-                raise ValueError(
-                    "Aggregate options were provided but resulted in no selectable fields. "
-                    "Ensure column names are specified for all aggregate options."
-                )
+                raise ValueError("Aggregate options resulted in no selectable fields.")
             select_clause = sql.SQL(", ").join(select_expressions)
         else:
-            if not base_columns:
+            # Base table columns
+            for col in base_columns:
+                alias = sql.Identifier(f"{table_name}.{col.name}")
+                select_expressions.append(
+                    sql.SQL("{}.{} AS {}").format(
+                        sql.Identifier(table_name), sql.Identifier(col.name), alias
+                    )
+                )
+
+            # Joined tables columns
+            processed_joined_tables: set[str] = set()
+            for join_opt in join_opts:
+                if (
+                    join_opt.join_to_table
+                    and join_opt.join_to_table not in processed_joined_tables
+                ):
+                    try:
+                        joined_table_meta = self.get_table_columns_metadata(
+                            join_opt.join_to_table
+                        )
+                        for col in joined_table_meta.columns:
+                            alias = sql.Identifier(
+                                f"{join_opt.join_to_table}.{col.name}"
+                            )
+                            select_expressions.append(
+                                sql.SQL("{}.{} AS {}").format(
+                                    sql.Identifier(join_opt.join_to_table),
+                                    sql.Identifier(col.name),
+                                    alias,
+                                )
+                            )
+                        processed_joined_tables.add(join_opt.join_to_table)
+                    except Exception as e:
+                        log.error(
+                            f"Could not get metadata for joined table {join_opt.join_to_table}: {e}"
+                        )
+                        pass
+
+            if not select_expressions:
                 raise ValueError(
-                    "base_columns must be provided if no aggregate options are specified."
+                    "No columns to select. Base table might have no columns or joined tables failed."
                 )
-            # Qualify base columns with table_name
-            select_clause = sql.SQL(", ").join(
-                map(
-                    lambda col: sql.SQL("{}.{}").format(
-                        sql.Identifier(table_name), sql.Identifier(col.name)
-                    ),
-                    base_columns,
-                )
-            )
+            select_clause = sql.SQL(", ").join(select_expressions)
 
         # FROM clause
         from_clause = sql.SQL("").join(
@@ -358,34 +387,15 @@ class PostgresService:
         # ORDER BY clause
         order_by_sql_clause = sql.SQL("")
         if order_by_column:
-            # Need to decide how to qualify order_by_column.
-            # If it could be from a joined table, this might need more complex handling
-            # or rely on the column being unambiguously named in the select list (e.g. via alias).
-            # For now, assume it refers to a column from the base table_name or is unambiguous.
-            # If the column names in SELECT are qualified (e.g., table.column),
-            # then order_by_column should ideally match that qualified name or an alias.
-            # Let's assume for now that if displayed columns are qualified like "table.column",
-            # order_by_column will also be passed in that format from the UI if needed.
-            # Or, if it's an aggregate, it might not be directly orderable this way without an alias.
-
-            # Simple case: if order_by_column contains a '.', assume it's already qualified.
-            if "." in order_by_column:
-                order_by_sql_clause = sql.SQL(" ORDER BY {} {}").format(
-                    sql.SQL(
-                        order_by_column
-                    ),  # Treat as already qualified or an expression/alias
-                    sql.SQL(order_by_direction),
-                )
-            else:
-                # If not qualified, assume it's from the base table for now.
-                # This might be ambiguous if a joined table also has this column name.
-                # A more robust solution would be to ensure order_by_column refers to an alias
-                # or a uniquely named column from the SELECT list generated earlier.
-                order_by_sql_clause = sql.SQL(" ORDER BY {}.{} {}").format(
-                    sql.Identifier(table_name),
-                    sql.Identifier(order_by_column),
-                    sql.SQL(order_by_direction),
-                )
+            # Directly use the order_by_column.
+            # It's assumed this column name is valid in the context of the final SELECT list.
+            # (e.g. it's an alias, or a unique name like table.column if that's how it appears in results)
+            order_by_sql_clause = sql.SQL(" ORDER BY {} {}").format(
+                sql.Identifier(
+                    order_by_column
+                ),  # Use Identifier for safety if it's a simple column name
+                sql.SQL(order_by_direction),
+            )
 
         # Assemble the query
         final_query = sql.SQL("SELECT {} FROM {}{}{}").format(
