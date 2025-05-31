@@ -76,9 +76,9 @@ class DatabaseTable(Widget):
     def watch_table_name(self, old_table_name: str | None, new_table_name: str | None):
         if self.is_mounted and self.table_name and self.db_connection:
             self._clear_filters()
+            self._clear_query_options()
             if self._fetch_metadata():
                 self._fetch_data()
-                self._clear_query_options()
 
     def watch_db_connection(
         self,
@@ -220,6 +220,11 @@ class DatabaseTable(Widget):
             string = f"{option.condition.to_pretty_string()} {option.column_name} "
             if option.condition == QueryOptionCondition.WHERE:
                 string += f"{option.where_condition} {option.where_value}"
+            elif option.condition in {
+                QueryOptionCondition.LEFT_JOIN,
+                QueryOptionCondition.INNER_JOIN,
+            }:
+                string += f"ON {option.join_to_table}.{option.join_to_column}"
             options.add_option(  # pyright: ignore [reportUnknownMemberType]
                 (
                     string,
@@ -229,7 +234,13 @@ class DatabaseTable(Widget):
             option_id += 1
 
         options.refresh(layout=True)
-        if self.is_mounted:
+        # Only fetch data if the table is properly set up with metadata
+        # and the metadata corresponds to the current table_name.
+        if (
+            self.is_mounted
+            and self.table_metadata
+            and self.table_metadata.table_name == self.table_name
+        ):
             self._fetch_data()
 
     def _update_db_connection(self):
