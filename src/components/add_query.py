@@ -111,6 +111,8 @@ class AddQueryOptionModalScreen(Screen[AddQueryOptionModalScreenResult]):
                     (">", ">"),
                     ("<=", "<="),
                     (">=", ">="),
+                    ("LIKE", "LIKE"),
+                    ("ILIKE", "ILIKE"),
                 ],
                 classes="where-condition-select",
             ),
@@ -188,8 +190,7 @@ class AddQueryOptionModalScreen(Screen[AddQueryOptionModalScreenResult]):
 
                 if raw_join_on_value is NoSelection:
                     raise ValueError("Join ON column must be selected.")
-                else:
-                    join_on_column_name = raw_join_on_value
+                join_on_column_name = str(raw_join_on_value)
 
                 selected_fk_col_meta = next(
                     (
@@ -227,9 +228,12 @@ class AddQueryOptionModalScreen(Screen[AddQueryOptionModalScreenResult]):
                         if condition is QueryOptionCondition.COUNT:
                             temp_col_name_for_swa = "*"
                         else:
-                            pass
+                            # For WHERE and other aggregates, a column must be selected
+                            raise ValueError(
+                                "Column must be selected for this operation."
+                            )
                     else:
-                        temp_col_name_for_swa = raw_column_value
+                        temp_col_name_for_swa = str(raw_column_value)
                 elif condition is QueryOptionCondition.COUNT:
                     temp_col_name_for_swa = "*"
 
