@@ -1,10 +1,13 @@
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import psycopg2
 from psycopg2 import sql
 
 from src.service.types import Column, TableMetadata
 from src.settings import DBConnection
+
+if TYPE_CHECKING:
+    from src.components.database_table import QueryOption
 
 
 class PostgresService:
@@ -180,3 +183,117 @@ class PostgresService:
                 for column in columns
             ],
         )
+
+    def build_query_with_options(
+        self,
+        table_name: str,
+        base_columns: list[str],
+        query_options: list["QueryOption"],
+    ) -> sql.Composed:
+        """
+        Builds a SQL query based on a list of QueryOption objects.
+
+        Args:
+            table_name: The name of the table to query.
+            base_columns: A list of column names to select if no aggregate options are provided.
+            query_options: A list of QueryOption objects to define aggregates and WHERE conditions.
+
+        Returns:
+            A psycopg2.sql.Composed object representing the built query.
+
+        Raises:
+            ConnectionError: If not connected to the database.
+            ValueError: If inputs are invalid (e.g., no base_columns and no aggregates,
+                        or aggregates provided but result in no selectable fields).
+        """
+        from src.types import QueryOptionCondition
+
+        self._connection_sanity_check()
+
+        aggregate_opts: list[QueryOption] = []
+        where_opts: list[QueryOption] = []
+
+        # Separate query options
+        for opt in query_options:
+            if opt.condition in {
+                QueryOptionCondition.SUM,
+                QueryOptionCondition.COUNT,
+                QueryOptionCondition.AVG,
+                QueryOptionCondition.MAX,
+                QueryOptionCondition.MIN,
+            }:
+                aggregate_opts.append(opt)
+            elif opt.condition == QueryOptionCondition.WHERE:
+                where_opts.append(opt)
+            # JOIN conditions are not handled in this version
+
+        # SELECT clause
+        select_expressions: list[sql.Composed] = []
+        if aggregate_opts:
+            for agg_opt in aggregate_opts:
+                if agg_opt.column_name:  # Ensure column_name is present
+                    select_expressions.append(
+                        sql.SQL("{}({})").format(
+                            sql.SQL(
+                                agg_opt.condition.value.upper()
+                            ),  # e.g., SUM, COUNT
+                            sql.Identifier(agg_opt.column_name),
+                        )
+                    )
+            if not select_expressions:
+                raise ValueError(
+                    "Aggregate options were provided but resulted in no selectable fields. "
+                    "Ensure column names are specified for all aggregate options."
+                )
+            select_clause = sql.SQL(", ").join(select_expressions)
+        else:
+            if not base_columns:
+                raise ValueError(
+                    "base_columns must be provided if no aggregate options are specified."
+                )
+            select_clause = sql.SQL(", ").join(map(sql.Identifier, base_columns))
+
+        # FROM clause
+        from_clause = sql.Identifier(table_name)
+
+        # WHERE clause
+        where_conditions: list[sql.Composed] = []
+        if where_opts:
+            for wh_opt in where_opts:
+                if wh_opt.column_name and wh_opt.where_condition:
+                    condition_upper = wh_opt.where_condition.upper()
+                    if condition_upper in ("IS NULL", "IS NOT NULL"):
+                        where_conditions.append(
+                            sql.SQL("{} {}").format(
+                                sql.Identifier(wh_opt.column_name),
+                                sql.SQL(
+                                    wh_opt.where_condition.upper()
+                                ),  # Use upper for consistency
+                            )
+                        )
+                    elif wh_opt.where_value is not None:
+                        where_conditions.append(
+                            sql.SQL("{} {} {}").format(
+                                sql.Identifier(wh_opt.column_name),
+                                sql.SQL(
+                                    wh_opt.where_condition
+                                ),  # Operator, e.g., '=', '>', 'LIKE'
+                                sql.Literal(wh_opt.where_value),
+                            )
+                        )
+                    # Silently skip malformed where options (e.g., condition requiring value but value is None)
+
+        where_sql_clause = sql.SQL("")
+        if where_conditions:
+            where_sql_clause = sql.SQL(" WHERE ") + sql.SQL(" AND ").join(
+                where_conditions
+            )
+
+        # Assemble the query
+        final_query = sql.SQL("SELECT {} FROM {}{}").format(
+            select_clause,
+            from_clause,
+            where_sql_clause,
+        )
+
+        return final_query

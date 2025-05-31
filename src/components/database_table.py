@@ -3,6 +3,7 @@ from typing import Any, Literal
 
 from rich.style import Style
 from rich.text import Text
+from textual import log
 from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.message import Message
@@ -134,6 +135,13 @@ class DatabaseTable(Widget):
             self._notify_connection_error(self.db_connection.name)
             return
 
+        query = self.postgres_service.build_query_with_options(
+            self.table_name,
+            [col.name for col in self.table_metadata.columns],
+            query_options=self.query_options,
+        )
+        log(f"🔥🔥🔥🔥🔥🔥🔥🔥🔥 {query.as_string(self.postgres_service.connection)}")
+
         data, query = self.postgres_service.get_data(
             self.table_name,
             [col.name for col in self.table_metadata.columns],
@@ -193,6 +201,8 @@ class DatabaseTable(Widget):
             option_id += 1
 
         options.refresh(layout=True)
+        if self.is_mounted:
+            self._fetch_data()
 
     def _update_db_connection(self):
         assert self.db_connection
