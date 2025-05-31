@@ -146,9 +146,15 @@ class DatabaseTable(Widget):
         assert self.db_connection
         assert self.table_name
         assert self.table_metadata
-        if not (self.postgres_service.is_connected() and self._update_db_connection()):
-            self._notify_connection_error(self.db_connection.name)
-            return
+
+        if not self.postgres_service.is_connected():
+            log.info(
+                "PostgresService reported not connected. Attempting to re-establish connection."
+            )
+            if not self._update_db_connection():
+                self._notify_connection_error(self.db_connection.name)
+                return
+            log.info("Connection re-established.")
 
         cols_for_query_builder = self.table_metadata.columns
 
@@ -160,15 +166,30 @@ class DatabaseTable(Widget):
             order_by_direction=self.order_by_direction,
         )
 
-        data, query_string, actual_column_names = (
-            self.postgres_service.get_data_from_query(query_composed)
-        )
-        log(f"Executed query: {query_string}")
-        log(f"Returned columns: {actual_column_names}")
+        try:
+            data, query_string, actual_column_names = (
+                self.postgres_service.get_data_from_query(query_composed)
+            )
+            log(f"Executed query: {query_string}")
+            log(f"Returned columns: {actual_column_names}")
 
-        self.displayed_columns = actual_column_names
-        self.table_data = TableData(data=data)
-        self.post_message(self.QueryUpdated(query_string))
+            self.displayed_columns = actual_column_names
+            self.table_data = TableData(data=data)
+            self.post_message(self.QueryUpdated(query_string))
+
+        except Exception as e:
+            log.error(f"Error executing query: {str(e)}")
+            self.app.notify(
+                f"Query failed: {str(e)}",  # More direct error message
+                title="Query Execution Error",
+                severity="error",
+                timeout=7,  # Slightly longer for error messages
+            )
+            if self.query_options:
+                removed_option = self.query_options.pop()
+                log.info(f"Removed problematic query option: {removed_option!r}")
+                self.mutate_reactive(DatabaseTable.query_options)
+            return
 
     def _draw_table(self) -> None:
         if not self.displayed_columns:

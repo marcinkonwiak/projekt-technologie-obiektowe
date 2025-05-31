@@ -36,14 +36,36 @@ class PostgresService:
             raise ConnectionError("Not connected to the database")
 
     def is_connected(self) -> bool:
-        if self.connection is None or self.cursor is None:
+        if self.connection is None or self.cursor is None or self.connection.closed:
+            if self.connection and self.connection.closed:
+                log.warning("Connection previously marked as closed.")
+                # Ensure state is clean if connection.closed was the trigger
+                self.connection = None
+                self.cursor = None
             return False
 
         try:
-            self.cursor.execute("SELECT 1")
+            # Use a temporary cursor for the health check to avoid issues with the shared cursor state
+            with self.connection.cursor() as temp_cursor:
+                temp_cursor.execute("SELECT 1")
             return True
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+            log.warning(f"Connection test query failed, connection seems dead: {e}")
+            # Attempt to clean up the dead connection
+            try:
+                if not self.connection.closed:  # Check if not already closed
+                    self.connection.close()
+            except Exception as close_exc:
+                log.error(f"Error while closing dead connection: {close_exc}")
+            finally:
+                self.connection = None
+                self.cursor = None
+            return False
         except Exception as e:
-            print(f"Error checking connection to the database: {e}")
+            log.error(f"Unexpected error during connection check: {e}")
+            # For other unexpected errors, also assume connection is compromised
+            self.connection = None
+            self.cursor = None
             return False
 
     def disconnect(self) -> bool:
@@ -117,23 +139,50 @@ class PostgresService:
         query: sql.Composed,
     ) -> tuple[list[tuple[Any, ...]], str, list[str]]:
         """
-        Executes a given composed query and returns the data, the query string,
-        and the list of column names from the result.
+        Executes a composed query and fetches all results.
+
+        Args:
+            query: A psycopg2.sql.Composed query object.
+
+        Returns:
+            A tuple containing the data, the executed query string, and the list of column names.
+
+        Raises:
+            ConnectionError: If not connected to the database.
+            psycopg2.Error: If any database error occurs during query execution.
         """
         self._connection_sanity_check()
-        assert self.cursor is not None
-        assert self.connection is not None
+        assert self.cursor is not None  # Ensured by _connection_sanity_check
+        assert self.connection is not None  # Ensured by _connection_sanity_check
 
         query_string = query.as_string(self.connection)
-        self.cursor.execute(query)
+        log(f"Executing query: {query_string}")
 
-        data = self.cursor.fetchall()
-
-        column_names: list[str] = []
-        if self.cursor.description:
-            column_names = [desc[0] for desc in self.cursor.description]
-
-        return data, query_string, column_names
+        try:
+            self.cursor.execute(query)
+            data = self.cursor.fetchall()
+            # Get column names from cursor.description
+            column_names: list[str] = []
+            if self.cursor.description:
+                column_names = [str(desc[0]) for desc in self.cursor.description]  # type: ignore[misc]
+            return data, query_string, column_names
+        except psycopg2.Error as e:  # Catch psycopg2 specific errors
+            log.error(f"Database error in get_data_from_query: {e}")
+            if self.connection:
+                try:
+                    self.connection.rollback()  # Attempt to rollback
+                    log.info("Transaction rolled back due to query error.")
+                except psycopg2.Error as rb_exc:
+                    # Log if rollback itself fails, but prioritize original error
+                    log.error(f"Error during rollback attempt: {rb_exc}")
+            raise  # Re-raise the original exception to be handled by the caller
+        except Exception as e:
+            # Catch other potential errors, though psycopg2.Error should cover most DB issues.
+            # It's less likely we'd need a rollback here, but consider if specific non-DB errors
+            # could also leave the transaction in a bad state.
+            log.error(f"Unexpected error in get_data_from_query: {e}")
+            # Not explicitly rolling back here, as it's not a psycopg2.Error
+            raise
 
     def get_table_columns_metadata(self, table: str) -> TableMetadata:
         self._connection_sanity_check()
