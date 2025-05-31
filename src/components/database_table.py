@@ -2,7 +2,6 @@ from typing import Any, Literal
 
 from rich.style import Style
 from rich.text import Text
-from textual import log
 from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.message import Message
@@ -101,23 +100,7 @@ class DatabaseTable(Widget):
 
     def watch_table_data(self, old_table_data: TableData, new_table_data: TableData):
         if self.is_mounted and self.table_name and self.db_connection:
-            log.info(
-                f"watch_table_data triggered. displayed_columns are now: {self.displayed_columns}"
-            )
             self._draw_table()
-
-    def watch_displayed_columns(
-        self, old_columns: list[str], new_columns: list[str]
-    ) -> None:
-        """Called when the displayed_columns attribute changes."""
-        if self.is_mounted:
-            if old_columns != new_columns:
-                log(
-                    f"displayed_columns changed from {old_columns} to {new_columns}. Table will be redrawn by watch_table_data if data also changed or was set."
-                )
-            # The elif for empty table columns might be less critical if watch_table_data handles drawing correctly.
-            # Consider if any scenario needs this watcher to trigger a draw independently.
-            # For now, simplifying to avoid race conditions.
 
     def on_data_table_header_selected(self, event: DataTable.HeaderSelected) -> None:
         if event.column_key.value in self.displayed_columns:
@@ -126,10 +109,6 @@ class DatabaseTable(Widget):
                 "ASC" if self.order_by_direction == "DESC" else "DESC"
             )
             self._fetch_data()
-        else:
-            log.warning(
-                f"Order by on column '{event.column_key.value}' not possible as it's not in displayed columns."
-            )
 
     def _fetch_metadata(self):
         assert self.db_connection
@@ -148,13 +127,9 @@ class DatabaseTable(Widget):
         assert self.table_metadata
 
         if not self.postgres_service.is_connected():
-            log.info(
-                "PostgresService reported not connected. Attempting to re-establish connection."
-            )
             if not self._update_db_connection():
                 self._notify_connection_error(self.db_connection.name)
                 return
-            log.info("Connection re-established.")
 
         cols_for_query_builder = self.table_metadata.columns
 
@@ -170,15 +145,12 @@ class DatabaseTable(Widget):
             data, query_string, actual_column_names = (
                 self.postgres_service.get_data_from_query(query_composed)
             )
-            log(f"Executed query: {query_string}")
-            log(f"Returned columns: {actual_column_names}")
 
             self.displayed_columns = actual_column_names
             self.table_data = TableData(data=data)
             self.post_message(self.QueryUpdated(query_string))
 
         except Exception as e:
-            log.error(f"Error executing query: {str(e)}")
             self.app.notify(
                 f"Query failed: {str(e)}",  # More direct error message
                 title="Query Execution Error",
@@ -187,7 +159,6 @@ class DatabaseTable(Widget):
             )
             if self.query_options:
                 removed_option = self.query_options.pop()
-                log.info(f"Removed problematic query option: {removed_option!r}")
                 self.mutate_reactive(DatabaseTable.query_options)
             return
 

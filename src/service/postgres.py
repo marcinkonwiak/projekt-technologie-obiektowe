@@ -284,10 +284,6 @@ class PostgresService:
             ValueError: If inputs are invalid (e.g., no base_columns and no aggregates,
                         or aggregates provided but result in no selectable fields).
         """
-        log(query_options)
-        log(base_columns)
-        log(table_name)
-
         self._connection_sanity_check()
 
         aggregate_opts: list[QueryOption] = []
