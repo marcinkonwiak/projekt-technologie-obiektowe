@@ -55,7 +55,7 @@ class DatabaseApp(App[None]):
 
     def on_mount(self) -> None:
         self.register_theme(default_theme)
-        self.theme = "tokyo-night"
+        self.theme = "catppuccin-mocha"
         text_area = self.query_one(TextArea)
         text_area.border_title = "SQL"
         text_area.read_only = True
