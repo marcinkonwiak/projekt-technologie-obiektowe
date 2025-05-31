@@ -31,6 +31,8 @@ class TableData:
 class QueryOption:
     column_name: str
     condition: QueryOptionCondition
+    where_condition: str | None = None
+    where_value: str | None = None
 
 
 class DatabaseTable(Widget):
@@ -179,9 +181,12 @@ class DatabaseTable(Widget):
 
         option_id = 1
         for option in self.query_options:
+            string = f"{option.condition.to_pretty_string()} {option.column_name} "
+            if option.condition == QueryOptionCondition.WHERE:
+                string += f"{option.where_condition} {option.where_value}"
             options.add_option(  # pyright: ignore [reportUnknownMemberType]
                 (
-                    f"{option.condition.to_pretty_string()} {option.column_name} ",
+                    string,
                     option_id.__str__(),
                 )
             )
@@ -210,6 +215,8 @@ class DatabaseTable(Widget):
             QueryOption(
                 column_name=result.column_name,
                 condition=result.condition,
+                where_value=result.where_value,
+                where_condition=result.where_condition,
             )
         )
         self.mutate_reactive(DatabaseTable.query_options)
