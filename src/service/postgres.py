@@ -2,12 +2,14 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import psycopg2
 from psycopg2 import sql
+from textual import log
 
 from src.service.types import Column, TableMetadata
 from src.settings import DBConnection
+from src.types import QueryOption, QueryOptionCondition
 
 if TYPE_CHECKING:
-    from src.components.database_table import QueryOption
+    pass
 
 
 class PostgresService:
@@ -187,8 +189,8 @@ class PostgresService:
     def build_query_with_options(
         self,
         table_name: str,
-        base_columns: list[str],
-        query_options: list["QueryOption"],
+        base_columns: list[Column],
+        query_options: list[QueryOption],
     ) -> sql.Composed:
         """
         Builds a SQL query based on a list of QueryOption objects.
@@ -206,12 +208,15 @@ class PostgresService:
             ValueError: If inputs are invalid (e.g., no base_columns and no aggregates,
                         or aggregates provided but result in no selectable fields).
         """
-        from src.types import QueryOptionCondition
+        log(query_options)
+        log(base_columns)
+        log(table_name)
 
         self._connection_sanity_check()
 
         aggregate_opts: list[QueryOption] = []
         where_opts: list[QueryOption] = []
+        join_opts: list[QueryOption] = []
 
         # Separate query options
         for opt in query_options:
@@ -225,7 +230,11 @@ class PostgresService:
                 aggregate_opts.append(opt)
             elif opt.condition == QueryOptionCondition.WHERE:
                 where_opts.append(opt)
-            # JOIN conditions are not handled in this version
+            elif opt.condition in {
+                QueryOptionCondition.LEFT_JOIN,
+                QueryOptionCondition.INNER_JOIN,
+            }:
+                join_opts.append(opt)
 
         # SELECT clause
         select_expressions: list[sql.Composed] = []
@@ -251,10 +260,34 @@ class PostgresService:
                 raise ValueError(
                     "base_columns must be provided if no aggregate options are specified."
                 )
-            select_clause = sql.SQL(", ").join(map(sql.Identifier, base_columns))
+            select_clause = sql.SQL(", ").join(
+                map(lambda col: sql.Identifier(col.name), base_columns)
+            )
 
         # FROM clause
-        from_clause = sql.Identifier(table_name)
+        from_clause = sql.SQL("").join(
+            [sql.Identifier(table_name)]
+            + [
+                sql.SQL(" {} JOIN {} ON {}.{} = {}.{}").format(
+                    sql.SQL(
+                        opt.condition.value.upper().replace("_", " ")
+                    ),  # LEFT JOIN or INNER JOIN
+                    sql.Identifier(opt.join_to_table),
+                    sql.Identifier(
+                        table_name
+                    ),  # Assuming join is always from the base table
+                    sql.Identifier(
+                        opt.column_name
+                    ),  # This is the column in the base table
+                    sql.Identifier(opt.join_to_table),
+                    sql.Identifier(
+                        opt.join_to_column
+                    ),  # This is the column in the table being joined
+                )
+                for opt in join_opts
+                if opt.join_to_table and opt.column_name and opt.join_to_column
+            ]
+        )
 
         # WHERE clause
         where_conditions: list[sql.Composed] = []

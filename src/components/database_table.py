@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 from typing import Any, Literal
 
 from rich.style import Style
@@ -15,7 +14,7 @@ from src.components.add_query import AddQueryOptionModalScreenResult
 from src.service.postgres import PostgresService
 from src.service.types import TableMetadata
 from src.settings import DBConnection
-from src.types import QueryOptionCondition
+from src.types import QueryOption, QueryOptionCondition
 
 
 class TableData:
@@ -26,14 +25,6 @@ class TableData:
         data: list[tuple[Any, ...]] | None = None,
     ):
         self.data = data if data else []
-
-
-@dataclass
-class QueryOption:
-    column_name: str
-    condition: QueryOptionCondition
-    where_condition: str | None = None
-    where_value: str | None = None
 
 
 class DatabaseTable(Widget):
@@ -135,14 +126,19 @@ class DatabaseTable(Widget):
             self._notify_connection_error(self.db_connection.name)
             return
 
-        query = self.postgres_service.build_query_with_options(
+        query_composed = self.postgres_service.build_query_with_options(
             self.table_name,
-            [col.name for col in self.table_metadata.columns],
+            self.table_metadata.columns,
             query_options=self.query_options,
         )
-        log(f"🔥🔥🔥🔥🔥🔥🔥🔥🔥 {query.as_string(self.postgres_service.connection)}")
+        query_string = (
+            query_composed.as_string(self.postgres_service.connection)
+            if self.postgres_service.connection
+            else "No connection or query options didn't build"
+        )
+        log(f"🔥🔥🔥🔥🔥🔥🔥🔥🔥 {query_string}")
 
-        data, query = self.postgres_service.get_data(
+        data, executed_query_string = self.postgres_service.get_data(
             self.table_name,
             [col.name for col in self.table_metadata.columns],
             order_by_column=self.order_by,
@@ -150,7 +146,11 @@ class DatabaseTable(Widget):
         )
 
         self.table_data = TableData(data=data)
-        self.post_message(self.QueryUpdated(query))
+        self.post_message(
+            self.QueryUpdated(
+                query_string if self.query_options else executed_query_string
+            )
+        )
 
     def _draw_table(self) -> None:
         assert self.table_metadata
@@ -227,6 +227,12 @@ class DatabaseTable(Widget):
                 condition=result.condition,
                 where_value=result.where_value,
                 where_condition=result.where_condition,
+                join_to_table=result.join_to_table
+                if hasattr(result, "join_to_table")
+                else None,
+                join_to_column=result.join_to_column
+                if hasattr(result, "join_to_column")
+                else None,
             )
         )
         self.mutate_reactive(DatabaseTable.query_options)

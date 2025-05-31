@@ -1,4 +1,5 @@
 import enum
+from dataclasses import dataclass
 
 
 class QueryOptionCondition(enum.Enum):
@@ -13,3 +14,13 @@ class QueryOptionCondition(enum.Enum):
 
     def to_pretty_string(self) -> str:
         return self.value.upper().replace("_", " ")
+
+
+@dataclass
+class QueryOption:
+    column_name: str
+    condition: QueryOptionCondition
+    where_condition: str | None = None
+    where_value: str | None = None
+    join_to_table: str | None = None
+    join_to_column: str | None = None

@@ -5,6 +5,7 @@ from textual.containers import Container, Vertical
 from textual.reactive import Reactive
 from textual.screen import Screen
 from textual.widgets import Button, Input, Label, Select
+from textual.widgets._select import NoSelection
 
 from src.service.types import TableMetadata
 from src.types import QueryOptionCondition
@@ -12,10 +13,13 @@ from src.types import QueryOptionCondition
 
 @dataclass
 class AddQueryOptionModalScreenResult:
-    condition: QueryOptionCondition
     column_name: str
+    condition: QueryOptionCondition
     where_condition: str | None = None
     where_value: str | None = None
+    join_to_table: str | None = None
+    join_on_column: str | None = None
+    join_to_column: str | None = None
 
 
 class AddQueryOptionModalScreen(Screen[AddQueryOptionModalScreenResult]):
@@ -115,15 +119,25 @@ class AddQueryOptionModalScreen(Screen[AddQueryOptionModalScreenResult]):
         )
 
     def _mount_join_content(self, container: Container) -> None:
+        # Get columns that are foreign keys from the current table
+        fk_columns = [
+            (col.name, col.name)
+            for col in self._table_metadata.columns
+            if col.is_foreign_key
+        ]
+        if not fk_columns:
+            container.mount(
+                Label(
+                    "No foreign key columns available in the current table to join on."
+                )
+            )
+            return
+
         container.mount(
-            Label("Join table", classes="field-label"),
-            Select(
-                [
-                    (table_name, table_name)
-                    for table_name in self._table_metadata.get_joinable_column_names()
-                ],
-                classes="column-name-select",
-            ),
+            Label("Join ON column (from current table)", classes="field-label"),
+            Select(fk_columns, classes="join-on-column-select"),
+            # The join_to_table and join_to_column will be derived from the selected fk_column
+            # We can display them for clarity if needed, but they are not directly selected by the user here.
         )
 
     def _mount_aggregate_content(self, container: Container) -> None:
@@ -157,21 +171,88 @@ class AddQueryOptionModalScreen(Screen[AddQueryOptionModalScreenResult]):
 
     def dispatch_add_message(self) -> AddQueryOptionModalScreenResult | None:
         condition = self._selected_condition
+        column_name_for_select_where_agg: str | None = None
+        join_on_column_name: str | None = None
+        join_to_table: str | None = None
+        join_to_column: str | None = None
 
         try:
-            select: Select[str] = self.query_one(".column-name-select", Select)  # pyright: ignore [reportUnknownVariableType]
-            assert isinstance(select, Select)
-            column_name = select.value
-        except Exception:
+            if condition in {
+                QueryOptionCondition.LEFT_JOIN,
+                QueryOptionCondition.INNER_JOIN,
+            }:
+                join_on_select_widget: Select[str] = self.query_one(
+                    ".join-on-column-select", Select
+                )
+                raw_join_on_value = join_on_select_widget.value
+
+                if raw_join_on_value is NoSelection:
+                    raise ValueError("Join ON column must be selected.")
+                else:
+                    join_on_column_name = raw_join_on_value
+
+                selected_fk_col_meta = next(
+                    (
+                        col
+                        for col in self._table_metadata.columns
+                        if col.name == join_on_column_name and col.is_foreign_key
+                    ),
+                    None,
+                )
+                if (
+                    not selected_fk_col_meta
+                    or not selected_fk_col_meta.foreign_key_table
+                    or not selected_fk_col_meta.foreign_key_column
+                ):
+                    raise ValueError(
+                        f"Could not find foreign key details for column {join_on_column_name}."
+                    )
+                join_to_table = selected_fk_col_meta.foreign_key_table
+                join_to_column = selected_fk_col_meta.foreign_key_column
+            else:
+                column_select_widget: Select[str] | None = None
+                try:
+                    column_select_widget = self.query_one(".column-name-select", Select)
+                except Exception:
+                    if condition is not QueryOptionCondition.COUNT:
+                        raise ValueError(
+                            "Column selection UI element (.column-name-select) not found."
+                        )
+
+                temp_col_name_for_swa: str | None = None
+
+                if column_select_widget:
+                    raw_column_value = column_select_widget.value
+                    if raw_column_value is NoSelection:
+                        if condition is QueryOptionCondition.COUNT:
+                            temp_col_name_for_swa = "*"
+                        else:
+                            pass
+                    else:
+                        temp_col_name_for_swa = raw_column_value
+                elif condition is QueryOptionCondition.COUNT:
+                    temp_col_name_for_swa = "*"
+
+                column_name_for_select_where_agg = temp_col_name_for_swa
+
+        except Exception as e:
             self.notify(
-                "Invalid options selected",
+                f"Invalid options selected: {str(e)}",
                 title="Error",
                 severity="error",
                 timeout=3,
             )
             return None
 
-        if not condition or not column_name or not isinstance(column_name, str):
+        # Determine the primary column_name for QueryOption based on condition
+        final_column_name = (
+            join_on_column_name
+            if condition
+            in {QueryOptionCondition.LEFT_JOIN, QueryOptionCondition.INNER_JOIN}
+            else column_name_for_select_where_agg
+        )
+
+        if not condition or not final_column_name:
             self.notify(
                 "Invalid options selected",
                 title="Error",
@@ -209,7 +290,10 @@ class AddQueryOptionModalScreen(Screen[AddQueryOptionModalScreenResult]):
 
         return AddQueryOptionModalScreenResult(
             condition=condition,
-            column_name=column_name,
+            column_name=final_column_name,
             where_condition=where_condition,
             where_value=where_value,
+            join_to_table=join_to_table,
+            # join_on_column is now represented by column_name for JOINs
+            join_to_column=join_to_column,
         )
