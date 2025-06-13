@@ -38,7 +38,7 @@ Aplikacja umożliwia tworzenia zapytań uwzględniając:
 
 Biblioteka Textual pozwala na tworzenie aplikacji składających się z widgetów.
 Architektura aplikacji została oparta na zasadzie "atrybuty w dół, wiadomości w górę".
-Oznacza to, że widget może aktualizować element podrzędny, ustawiając jego atrybuty lub wywołując jego metody, ale widgety powinny wysyłać wiadomości tylko do swojego rodzica.
+Oznacza to, że widget może aktualizować element podrzędny, ustawiając jego atrybuty lub wywołując jego metody. Widgety powinny wysyłać wiadomości do swojego rodzica.
 
 ![Alt text](app2.png "")
 
